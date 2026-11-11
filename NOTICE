@@ -1,6 +1,7 @@
 serai plugin SDK
 Copyright 2026 Christian Weinberger
 
-This product includes the serai.v1 protocol definitions (proto/serai/v1) and
-the Go code generated from them (gen/go/serai/v1), licensed under the Apache
-License, Version 2.0, as is the rest of this repository.
+This product includes the serai.plugin.v1 protocol definitions
+(proto/serai/plugin/v1) and the Go code generated from them
+(gen/go/serai/plugin/v1), licensed under the Apache License, Version 2.0, as
+is the rest of this repository.
