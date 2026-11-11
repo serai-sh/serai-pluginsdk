@@ -1,0 +1,718 @@
+// SPDX-License-Identifier: Apache-2.0
+
+// The serai plugin API, version 1: everything a plugin and the gateway say
+// to each other, and nothing else. A plugin is a program the gateway runs;
+// it speaks this on its stdin and stdout. The gateway translates it to and
+// from serai's internal protocol (internal/pluginapi), which plugins never
+// see, so serai's internals change freely and a plugin built today keeps
+// working.
+//
+// The rules (serai's docs/PLUGINS.md § The plugin API): v1 only grows. New messages,
+// fields, calls and enum values may be added; nothing is renamed, renumbered,
+// retyped or removed (`make lint` runs buf breaking against the last release
+// to hold that). A change that can't be made so is serai.plugin.v2, which the
+// gateway serves beside v1 for an overlap period. A plugin ignores fields it
+// doesn't know, and treats an enum value it doesn't know as the zero value.
+//
+// What a plugin may do is what its scopes allow (serai's docs/PLUGINS.md § Scopes),
+// and the gateway checks every call. A call no plugin may ever make (answer a
+// permission prompt, send keys, delete a Task, manage Hosts or plugins) has
+// no message here at all.
+syntax = "proto3";
+
+package serai.plugin.v1;
+
+option go_package = "github.com/serai-sh/serai-pluginsdk/gen/go/serai/plugin/v1;pluginv1";
+
+// ---- The connection ----
+
+// Frame is one message on the connection, either way: a 4-byte big-endian
+// length, then the Frame, at most 1 MiB in all. The plugin sends its Hello
+// first; the gateway answers with its own, and either side may then send
+// Requests (each with an id of its own, echoed by the Response), Events and
+// Cancels.
+//
+// The bodies are numbered from 16 so that the gateway tells a v1 plugin from
+// one that speaks serai's internal protocol by the first frame alone: there,
+// the Hello is field 3.
+message Frame {
+  // id is a Request's, chosen by its sender and unique among its open
+  // requests, echoed by the Response and named by a Cancel; 0 on a Hello and
+  // an Event.
+  uint64 id = 1;
+  oneof body {
+    Hello hello = 16;
+    Request request = 17;
+    Response response = 18;
+    Event event = 19;
+    Cancel cancel = 20;
+  }
+}
+
+// Hello opens the connection: the plugin's first, then the gateway's.
+message Hello {
+  // api is "serai.plugin.v1". The gateway closes a connection whose first
+  // Hello names an api it doesn't serve, saying which it does.
+  string api = 1;
+  // The plugin's: its name (as its plugin.toml says) and its own build.
+  // The gateway's: the plugin's name and version as the person installed it.
+  string name = 2;
+  string version = 3;
+  // From the plugin: what it was built with, e.g. "go-sdk 0.2.1460"; "" for a
+  // plugin that speaks the protocol itself.
+  string sdk = 4;
+  // From the gateway: the serai release serving the plugin, e.g.
+  // "0.2.1460 (abc1234)", for a plugin naming itself to another system.
+  string serai_version = 5;
+  // From the gateway: the scopes the person granted, as plugin.toml spells
+  // them ("read", "events:turn_finished").
+  repeated string scopes = 6;
+}
+
+// Cancel abandons the sender's own open request id: its handler's context
+// ends, and its Response, if one still comes, is dropped.
+message Cancel {
+  uint64 id = 1;
+}
+
+// Request is one call. The plugin makes the first group; the gateway makes
+// the second, for the commands and the Task source the plugin registered.
+message Request {
+  oneof call {
+    GetConfig get_config = 1;
+    RegisterCommand register_command = 2;
+    RegisterTemplate register_template = 3;
+    PublishCard publish_card = 4;
+    DeleteCard delete_card = 5;
+    PublishTasks publish_tasks = 6;
+    ListHosts list_hosts = 7;
+    ListTasks list_tasks = 8;
+    ReadConversation read_conversation = 9;
+    GitStatus git_status = 10;
+    ListEvents list_events = 11;
+    SendToTask send_to_task = 12;
+
+    InvokeCommand invoke_command = 64;
+    ReadSourceConversation read_source_conversation = 65;
+    SendToSource send_to_source = 66;
+    SourceTaskSeen source_task_seen = 67;
+    AnswerSourceGate answer_source_gate = 68;
+    StopSourceTask stop_source_task = 69;
+  }
+}
+
+// Response answers one Request: a non-OK status, or OK and its result.
+message Response {
+  Status status = 1; // unset is OK
+  oneof result {
+    Empty empty = 2;
+    Config config = 3;
+    HostList host_list = 4;
+    TaskList task_list = 5;
+    ConversationPage conversation_page = 6;
+    GitStatusResult git_status = 7;
+    EventList event_list = 8;
+    CommandOutput command_output = 9;
+  }
+}
+
+message Empty {}
+
+message Status {
+  Code code = 1;
+  string message = 2; // in words a person can read as they are
+}
+
+enum Code {
+  CODE_OK = 0;
+  CODE_UNIMPLEMENTED = 1; // the other side doesn't know this call; nothing ran
+  CODE_REFUSED = 2; // it was understood and the answer is no: a scope, a rule; never retry as it is
+  CODE_UNAVAILABLE = 3; // it never arrived (a Host not connected); may retry
+  CODE_DEADLINE = 4;
+  CODE_INVALID = 5; // malformed
+  CODE_NOT_FOUND = 6;
+  CODE_INTERNAL = 7;
+}
+
+// Event is pushed by the gateway, unasked.
+message Event {
+  // A journal event of a kind the plugin's events:<kind> scopes cover, as it
+  // happens. Its id is 0: it is pushed before the journal commits it.
+  JournalEvent journal_event = 1;
+}
+
+// ---- Config ----
+
+// GetConfig reads the plugin's config: the person's values over its
+// plugin.toml's defaults, secrets included. Always allowed; a plugin reads
+// only its own. Answered with config.
+message GetConfig {}
+
+message Config {
+  map<string, string> values = 1;
+}
+
+// ---- Commands and templates (scope: commands) ----
+
+// CommandEffect is what a command may do, and so where it appears.
+enum CommandEffect {
+  COMMAND_EFFECT_UNSPECIFIED = 0; // as CONFIRM: a command never runs freely by mistake
+  COMMAND_EFFECT_READ = 1; // also an MCP tool that runs freely, every call audited
+  COMMAND_EFFECT_WRITE = 2; // also an MCP tool, every call audited
+  COMMAND_EFFECT_CONFIRM = 3; // also an MCP tool that asks the person each time
+  COMMAND_EFFECT_LOCAL = 4; // the CLI and the TUI only, never MCP
+}
+
+// Command is `serai <noun> <verb> [args] [--flags]`, `:<noun> <verb>` in the
+// TUI, and the MCP tool <noun>_<verb> unless it is LOCAL.
+message Command {
+  string noun = 1; // lowercase letters, digits, dashes; never one of serai's own
+  string verb = 2;
+  // usage names the positional arguments: "<name>" required, "[name]"
+  // optional, "<files>..." any number.
+  string usage = 3;
+  string short = 4; // one line, for help and the MCP tool's description
+  repeated Flag flags = 5;
+  CommandEffect effect = 6;
+}
+
+message Flag {
+  string name = 1; // lowercase letters, digits, dashes; not json or help
+  string type = 2; // "string" (the default), "bool" or "int"
+  string usage = 3;
+  string default = 4;
+  bool required = 5;
+}
+
+message RegisterCommand {
+  Command command = 1;
+}
+
+// InvokeCommand comes from the gateway: someone ran one of the plugin's
+// commands. Answer with command_output, or a status (REFUSED to say no).
+message InvokeCommand {
+  string noun = 1;
+  string verb = 2;
+  repeated string args = 3;
+  map<string, string> flags = 4; // every flag's value, defaults included
+  string caller = 5; // who ran it: "cli", "tui", "app", "mcp"
+}
+
+message CommandOutput {
+  string text = 1; // printed as it is
+}
+
+// Template prefills the new-Task dialog.
+message Template {
+  string name = 1;
+  string host = 2; // "" for the dialog's own choice
+  string project = 3;
+  string cwd = 4;
+  string command = 5;
+  bool headless = 6;
+  string model = 7;
+}
+
+message RegisterTemplate {
+  Template template = 1;
+}
+
+// ---- Cards (scope: cards) ----
+
+// Card is Markdown beside one Task (host and task_id), a Host (host), or
+// everywhere (neither). Publishing an id again replaces the Card; the
+// plugin's Cards go when it stops.
+message Card {
+  string id = 1;
+  string host = 2;
+  string task_id = 3;
+  string title = 4;
+  // markdown is always shown; with details set, it is the Card's summary.
+  string markdown = 5; // at most 16 KiB
+  // actions are its buttons; with details set they fold away with them.
+  repeated CardAction actions = 6; // at most 8
+  // covers names the pull requests the Card speaks for, "owner/repo#123":
+  // beside the Task it is on, the frontend shows no pull request card of its
+  // own for them while the Card is there. At most 16.
+  repeated string covers = 7;
+  // badges sit by the title: a word or two each, in a tone the frontend
+  // colours from its own theme. At most 6.
+  repeated Badge badges = 8;
+  // details is Markdown behind "more", folded until the person opens it,
+  // which the frontend remembers per window. At most 16 KiB.
+  string details = 9;
+}
+
+// Badge is a short label by a Card's title, "A" or "#3 in queue".
+message Badge {
+  string label = 1; // one line, at most 24 characters
+  Tone tone = 2;
+}
+
+// Tone is what a badge says, which the frontend's theme colours: a plugin
+// names no colour of its own.
+enum Tone {
+  TONE_NEUTRAL = 0;
+  TONE_GOOD = 1;
+  TONE_INFO = 2;
+  TONE_WARN = 3;
+  TONE_BAD = 4;
+}
+
+// CardAction is a button running one of this plugin's own commands, as the
+// TUI's : prompt would: "pulse ping --name you". Any other is refused.
+message CardAction {
+  string label = 1;
+  string command = 2;
+}
+
+message PublishCard {
+  Card card = 1;
+}
+
+message DeleteCard {
+  string id = 1;
+}
+
+// ---- Reading the fleet (scope: read) ----
+
+// The serai words for where a Task is.
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_STABLED = 1; // settled, nothing new
+  TASK_STATUS_UNDERWAY = 2; // its agent is in a turn
+  TASK_STATUS_AT_THE_GATE = 3; // a permission prompt or a question waits on the person
+  TASK_STATUS_ARRIVED = 4; // a turn ended with output nobody has looked at yet
+  TASK_STATUS_STRANDED = 5; // its window is gone
+  TASK_STATUS_NO_AGENT = 6; // no agent runs in it: a shell or another program
+}
+
+enum Agent {
+  AGENT_UNSPECIFIED = 0; // none, or not known
+  AGENT_CLAUDE = 1; // Claude Code
+  AGENT_OPENCODE = 2; // OpenCode
+}
+
+enum HostState {
+  HOST_STATE_UNSPECIFIED = 0;
+  HOST_STATE_CONNECTING = 1;
+  HOST_STATE_CONNECTED = 2;
+  HOST_STATE_FAILED = 3;
+  HOST_STATE_DISCONNECTED = 4;
+}
+
+// ListHosts lists every Host and Workspace this gateway drives. Answered
+// with host_list.
+message ListHosts {}
+
+message HostList {
+  repeated Host hosts = 1;
+}
+
+// Host is one place Tasks run: a Host's default Workspace (workspace "") or
+// one of its named ones, each listed apart.
+message Host {
+  string name = 1;
+  string workspace = 2;
+  HostState state = 3;
+  bool local = 4; // this computer
+  string message = 5; // the last error or state detail, in words
+}
+
+// ListTasks lists one Host's (and Workspace's) Tasks. Answered with
+// task_list. A Host that isn't connected answers UNAVAILABLE.
+message ListTasks {
+  string host = 1;
+  string workspace = 2; // "" for the default one
+  bool include_archived = 3;
+}
+
+message TaskList {
+  repeated Task tasks = 1;
+}
+
+message Task {
+  string id = 1; // unique on its Host and Workspace
+  string host = 2;
+  string workspace = 3;
+  string name = 4;
+  string project = 5; // its Project's name; "" for none
+  string cwd = 6; // the folder it was started in, on its Host
+  TaskStatus status = 7;
+  Agent agent = 8;
+  bool headless = 9; // a headless agent: no terminal, its conversation is everything
+  bool archived = 10;
+  int64 last_activity_s = 11; // unix seconds; 0 when not known yet
+  string preview = 12; // one line: the ask, the step or the reply, by status
+  bool focused = 13; // in the person's Focus
+}
+
+// ReadConversation reads one page of a Task's conversation, oldest first,
+// in the same entries whichever agent wrote it. Answered with
+// conversation_page.
+message ReadConversation {
+  string host = 1;
+  string workspace = 2;
+  string task_id = 3;
+  string cursor = 4; // "" for the newest page; a page's next_cursor for the one before it
+  int32 max_bytes = 5; // 0 for the default, 1 MiB
+}
+
+message ConversationPage {
+  repeated Entry entries = 1; // oldest first
+  string next_cursor = 2;
+  bool eof = 3; // nothing older remains
+}
+
+// Entry is one thing said or done in a conversation. A reader skips a kind
+// it doesn't know: v1 grows by new kinds.
+message Entry {
+  string id = 1;
+  int64 at_ms = 2; // unix milliseconds; 0 when not known
+  Agent agent = 3;
+  oneof kind {
+    Prompt prompt = 10;
+    AssistantText assistant_text = 11;
+    Thinking thinking = 12;
+    ToolCall tool_call = 13;
+    ToolResult tool_result = 14;
+    Notice notice = 15;
+  }
+}
+
+message Prompt {
+  string text = 1;
+  // author names who said it when several people share the conversation;
+  // "" for the person's own.
+  string author = 2;
+}
+
+message AssistantText {
+  string text = 1;
+  string model = 2;
+}
+
+message Thinking {
+  string text = 1;
+}
+
+message ToolCall {
+  string id = 1; // a ToolResult's call_id names it
+  string name = 2;
+  string input_json = 3;
+  string title = 4; // the agent's one-line description of the call, when it gives one
+}
+
+message ToolResult {
+  string call_id = 1;
+  string output = 2;
+  bool is_error = 3;
+}
+
+// Notice is bookkeeping worth showing: a compaction, an API error, a retry.
+message Notice {
+  string kind = 1;
+  string text = 2;
+}
+
+// GitStatus reads the git checkout a Task works in: the folder its agent is
+// in now when it moved, else the one it started in. Answered with
+// git_status.
+message GitStatus {
+  string host = 1;
+  string workspace = 2;
+  string task_id = 3;
+}
+
+message GitStatusResult {
+  bool repo = 1; // false: not inside a git checkout
+  string branch = 2; // "" when detached
+  string commit = 3; // HEAD; "" before the first commit
+  string upstream = 4;
+  int32 ahead = 5;
+  int32 behind = 6;
+  int32 changed = 7; // tracked files with changes, staged or not
+  int32 untracked = 8;
+  // The fetch URL of the branch's upstream remote, else origin's; "" for
+  // neither. It names the repository a branch's pull request is in.
+  string remote_url = 9;
+}
+
+// ListEvents reads the journal of what happened across the fleet, oldest
+// first, after a cursor. Answered with event_list.
+message ListEvents {
+  int64 after_id = 1; // the last id already read; 0 for the oldest kept
+  int32 limit = 2; // 0 for 100; at most 1000
+  repeated string kinds = 3; // empty for every kind
+  string host = 4; // "" for every Host
+  string task_id = 5; // "" for every Task
+}
+
+message EventList {
+  repeated JournalEvent events = 1;
+  int64 next_after_id = 2; // pass back as after_id
+}
+
+// JournalEvent is one thing that happened. Which fields are set depends on
+// the kind:
+//
+//   - status_changed, gate_opened, turn_finished: task_name, project, from,
+//     to, preview
+//   - question_asked: task_name, project, question, options
+//   - task_created, task_archived, task_seen: task_name, project
+//   - host_state: host_state, message
+//
+// Other kinds (tasks_restored, todo_changed, …) carry only what every event
+// does; v1 adds fields for them when a plugin needs them.
+message JournalEvent {
+  int64 id = 1; // the cursor; 0 on a pushed Event
+  int64 at_ms = 2;
+  string host = 3;
+  string workspace = 4;
+  string task_id = 5;
+  string kind = 6;
+  string task_name = 7;
+  string project = 8;
+  TaskStatus from = 9; // unspecified on task_created
+  TaskStatus to = 10;
+  string preview = 11;
+  string question = 12;
+  repeated string options = 13;
+  HostState host_state = 14;
+  string message = 15;
+}
+
+// ---- Sending (scope: send) ----
+
+// SendToTask hands a Task's agent text from the plugin, as a program's
+// message, never the person's: to a headless agent as a prompt, to a
+// terminal one typed into its input box with Return. Only a live agent that
+// isn't waiting at a prompt or a question takes it, under serai's rules for
+// text that isn't the person's own (no control bytes, no leading ! or #);
+// anything else is refused. Every send is audited. Answered with empty.
+message SendToTask {
+  string host = 1;
+  string workspace = 2;
+  string task_id = 3;
+  string text = 4;
+}
+
+// ---- A Task source (scope: source) ----
+//
+// A plugin can show Tasks that live in another system (a cloud agent's
+// sessions) beside serai's own, in the sidebar and the fleet, under the
+// label it gives. They have no terminal; nothing in serai archives, moves or
+// kills one. The gateway keeps them only while the plugin is connected: a
+// restarted plugin publishes them again.
+
+// PublishTasks replaces everything the plugin showed before. The gateway
+// refuses the whole set when a string isn't one line of plain text, a URL
+// isn't http or https or carries credentials, or a bound is passed.
+message PublishTasks {
+  Source source = 1;
+}
+
+message Source {
+  string label = 1; // where the Tasks live, at most 40: "Open in <label>"
+  string note = 2; // one line about the source as a whole ("not signed in"); "" for none
+  repeated SourceTask tasks = 3; // at most 200
+  repeated SourceGroup groups = 4; // at most 100
+  // icon is the source's mark, drawn about 14 px square wherever serai
+  // names the source (its Tasks' rows, its Host header, its Groups, the
+  // filter menu, the fleet board). Unset: serai's own neutral mark. It is
+  // drawn as an image, never as markup, so an SVG can't follow the theme's
+  // text colour: give icon_dark too when icon doesn't read on a dark
+  // background, or make one that reads on both (a filled square, say).
+  Icon icon = 5;
+  Icon icon_dark = 6; // drawn in place of icon on a dark theme; unset: icon on both
+  // symbol stands for icon in a terminal: one printable character one cell
+  // wide ("▲"), never an emoji or a control character. "": serai's "⧉".
+  string symbol = 7;
+}
+
+// Icon is a small image: SVG or PNG, at most 16 KiB. The gateway refuses
+// the whole PublishTasks when it is another type, larger, or not what its
+// media type says.
+message Icon {
+  string media_type = 1; // "image/svg+xml" or "image/png"
+  bytes data = 2;
+}
+
+// SourceTask is one Task a source shows.
+message SourceTask {
+  string id = 1; // the plugin's own, unique within it
+  string name = 2;
+  string project = 3; // listed with serai's Projects of this name; "" for none
+  // STABLED, UNDERWAY, AT_THE_GATE or ARRIVED: the source decides, serai
+  // detects nothing.
+  TaskStatus status = 4;
+  int64 last_activity_s = 5;
+  string url = 6; // where "Open in <label>" goes
+  string preview = 7; // one line
+  repeated Link links = 8; // at most 8
+  // conversation_rev: the source serves the Task's conversation
+  // (ReadSourceConversation) as it stands at this revision, at most 128
+  // bytes. Change it whenever the conversation changes, a running turn's
+  // step included. "" serves none.
+  string conversation_rev = 9;
+  // The person may write to it (SendToSource) while it is stabled or
+  // arrived, and with messages_while_working while it is underway too.
+  bool accepts_messages = 10;
+  bool messages_while_working = 11;
+  bool stoppable = 12; // the person may stop its running turn (StopSourceTask)
+  Gate gate = 13; // what it waits on at the gate, when the person may answer from serai (AnswerSourceGate)
+  string group_id = 14; // the SourceGroup it is in; "" for none
+
+  // What the source knows beyond the status, each optional.
+  repeated string participants = 15; // at most 20
+  string model = 16;
+  int32 context_percent = 17; // 0–100; 0 when not known
+  int64 context_tokens = 18;
+  string cost = 19; // in words, as the source counts it: "$0.42"
+  string state_note = 20; // one line: "sandbox paused"
+  repeated Plan plans = 21; // at most 4
+  repeated PullRequest pull_requests = 22; // at most 20
+  repeated Link artifacts = 23; // at most 20: documents its agent wrote
+  repeated Preview previews = 24; // at most 20
+}
+
+// SourceGroup is the source's own grouping of its Tasks (a plan's
+// sessions). serai shows each member once, under its Group; it never renames
+// one, leads it, archives it or broadcasts to it.
+message SourceGroup {
+  string id = 1;
+  string title = 2; // one line, at most 80
+  string lead_task_id = 3; // a member, listed first and marked lead; "" for none
+  string url = 4; // "" for none
+  GroupSummary summary = 5; // unset: serai's own roll-up of the members
+}
+
+// GroupSummary is the source's overview of a Group, drawn in serai's own
+// type in place of its roll-up. serai's at-the-gate count stands beside it
+// always.
+message GroupSummary {
+  string subtitle = 1; // one line, at most 80
+  int32 done = 2; // with total > 0: a progress line, "6 of 7 merged"
+  int32 total = 3;
+  string done_word = 4; // at most 24: "merged"
+  bool bar = 5; // a meter as well
+  string state = 6; // at most 24, drawn neutral: "blocked"
+  Link link = 7;
+  // attention counts the members that need a person before they go on,
+  // named by attention_word (at most 24: "blocked"), drawn in amber.
+  int32 attention = 8;
+  string attention_word = 9;
+}
+
+// Gate is the tool call a source's Task waits on.
+message Gate {
+  string id = 1; // at most 128 bytes; AnswerSourceGate names it
+  string tool = 2;
+  string input = 3; // JSON or plain text, at most 8 KiB; new lines and tabs allowed
+  bool may_approve = 4;
+  bool may_deny = 5;
+  string why_not = 6; // one line, when the person may not approve
+  // body, when set, is the call laid out as a card, drawn in place of the
+  // input: for a call whose input is a document, such as a proposed plan.
+  GateBody body = 7;
+}
+
+// GateBody is a gate's ask as a card, at most 48 KiB of Markdown in all.
+message GateBody {
+  string action = 1; // one line, at most 40: what approving does, "Create plan"
+  string title = 2; // one line, at most 200
+  string count = 3; // one line, at most 80: "4 work items"
+  repeated GateSection sections = 4; // at most 8
+  repeated GateItem items = 5; // at most 50, numbered in order
+}
+
+message GateSection {
+  string heading = 1; // one line, at most 80
+  string markdown = 2; // at most 16 KiB
+  bool folded = 3; // shortened behind "Show all"; a long one is anyway
+}
+
+message GateItem {
+  string label = 1; // one line, at most 200
+  string kind = 2; // one word: "feature", "bug", "chore", "improvement"
+  string detail = 3; // Markdown, at most 8 KiB
+}
+
+message Plan {
+  string title = 1;
+  string url = 2;
+  repeated PlanItem items = 3; // at most 50
+}
+
+message PlanItem {
+  string label = 1;
+  string state = 2; // the source's word: "merged", "open"
+  bool done = 3; // counts toward the plan's progress
+  string url = 4;
+  string kind = 5; // one word: "feature", "bug"
+  int64 since_s = 6; // when it reached its state, unix seconds; 0 when not said
+  string note = 7; // one line, at most 300: why it waits
+  bool attention = 8; // it needs a person before it goes on: the note is a warning
+}
+
+message PullRequest {
+  string url = 1;
+  string repo = 2; // "org/name"
+  int32 number = 3;
+  string title = 4;
+  string state = 5; // draft, open, merged, closed
+  int32 additions = 6;
+  int32 deletions = 7;
+  string grade = 8; // a reviewer's, "A"–"F"; "" for none
+  repeated string notes = 9; // short words: "queued"
+}
+
+// Preview is a server the Task runs that the person can open.
+message Preview {
+  string name = 1;
+  string url = 2;
+  int32 port = 3;
+  bool live = 4;
+}
+
+message Link {
+  string label = 1;
+  string url = 2;
+}
+
+// The gateway's calls about the source's Tasks. Each comes from the
+// person's own window only, never from MCP, an agent or another plugin, and
+// only for a Task the plugin shows and that offers it. Answer OK, or REFUSED
+// in words the person reads as they are.
+
+// ReadSourceConversation: one page of a Task's conversation, oldest first.
+// Answer with conversation_page.
+message ReadSourceConversation {
+  string task_id = 1;
+  string cursor = 2; // "" for the newest page
+}
+
+// SendToSource: the person typed this for the Task.
+message SendToSource {
+  string task_id = 1;
+  string text = 2; // at most 64 KiB
+}
+
+// SourceTaskSeen: the person looked at the Task; clear its arrived.
+message SourceTaskSeen {
+  string task_id = 1;
+}
+
+// AnswerSourceGate: the person's approve or deny of the Task's gate, by its
+// id. The gateway has checked the Task is at that gate and that the gate
+// lets the person answer so.
+message AnswerSourceGate {
+  string task_id = 1;
+  string gate_id = 2;
+  bool approve = 3;
+}
+
+// StopSourceTask: the person stopped the Task's running turn.
+message StopSourceTask {
+  string task_id = 1;
+}

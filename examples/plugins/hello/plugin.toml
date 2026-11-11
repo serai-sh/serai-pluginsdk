@@ -1,0 +1,15 @@
+# The example plugin: a command, a Card on every status change, and a Task
+# template. Build it, then add and enable it:
+#
+#   go build -o examples/plugins/hello/bin/hello ./examples/plugins/hello
+#   serai plugin add ./examples/plugins/hello
+#   serai plugin enable hello
+#   serai hello greet --name you
+name = "hello"
+version = "0.1.0"
+description = "Says hello, and shows a Card when a Task's status changes"
+exec = "bin/hello"
+scopes = ["cards", "commands", "events:status"]
+
+[config]
+greeting = { type = "string", default = "Hello", description = "what hello greet says" }
