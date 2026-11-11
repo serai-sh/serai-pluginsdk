@@ -17,8 +17,8 @@
 //		})
 //	}
 //
-// The reads (ListHosts, ListTasks, ReadConversation, GitStatus, ListEvents)
-// and SendToTask take and give the API's own messages (gen/go/serai/plugin/v1),
+// The reads (ListHosts, ListTasks, ReadConversation, GitStatus,
+// ListPullRequests, ListEvents) and SendToTask take and give the API's own messages (gen/go/serai/plugin/v1),
 // and Call sends any v1 request the SDK doesn't wrap. The gateway holds
 // every call to the plugin's scopes.
 //
@@ -193,9 +193,17 @@ func icon(i *Icon) *pluginv1.Icon {
 // URL is where "Open in <Label>" goes, "" for none. Summary, when set, is
 // drawn in place of serai's status roll-up; serai always adds its own
 // at-the-gate count.
+//
+// Items are the Group's own checklist (a Factory plan's work items), called
+// ItemsWord ("work items"): drawn on the Group's page and in its members'
+// Context, never on a member's row, whose plan bar is the Task's own Plans
+// (a session's task list). With Items, serai counts Summary's Done and
+// Total from them, leaving cancelled ones out. At most 50.
 type Group struct {
 	ID, Title, Lead, URL string
 	Summary              *GroupSummary
+	Items                []PlanItem
+	ItemsWord            string
 }
 
 // GroupSummary is the source's overview of a Group, in fields serai draws in
@@ -238,6 +246,8 @@ type ExternalTask struct {
 
 	// What the source knows beyond the status, each optional: who is in it,
 	// its model, context and cost, a line on where it stands, and its work.
+	// Plans are the Task's own (a session's task list), drawn as its row's
+	// plan bar; a Group's checklist goes on the Group (Group.Items).
 	Participants           []string
 	Model, Cost, StateNote string
 	ContextPercent         int
@@ -289,6 +299,9 @@ type Plan struct {
 // PlanItem is one item of a Plan: Kind its one word ("feature"), Since when
 // it reached State, and Note a line on it, a warning with Attention (the
 // item needs a person before it can go on: "Its dependency hasn't merged").
+// An item whose State is "cancelled" stays listed, struck through, and
+// counts for neither done nor total, so a GroupSummary that counts the
+// same way agrees with its members' plan bars.
 type PlanItem struct {
 	Label, State, URL string
 	Done              bool
@@ -550,15 +563,7 @@ func (p *Plugin) PublishTasks(ctx context.Context, s Source) error {
 			et.LastActivityS = t.LastActivity.Unix()
 		}
 		for _, pl := range t.Plans {
-			ep := &pluginv1.Plan{Title: pl.Title, Url: pl.URL}
-			for _, it := range pl.Items {
-				ei := &pluginv1.PlanItem{Label: it.Label, State: it.State, Done: it.Done, Url: it.URL, Kind: it.Kind, Note: it.Note, Attention: it.Attention}
-				if !it.Since.IsZero() {
-					ei.SinceS = it.Since.Unix()
-				}
-				ep.Items = append(ep.Items, ei)
-			}
-			et.Plans = append(et.Plans, ep)
+			et.Plans = append(et.Plans, &pluginv1.Plan{Title: pl.Title, Url: pl.URL, Items: planItems(pl.Items)})
 		}
 		for _, pr := range t.PullRequests {
 			et.PullRequests = append(et.PullRequests, &pluginv1.PullRequest{Url: pr.URL, Repo: pr.Repo, Number: int32(pr.Number), Title: pr.Title,
@@ -570,7 +575,7 @@ func (p *Plugin) PublishTasks(ctx context.Context, s Source) error {
 		src.Tasks = append(src.Tasks, et)
 	}
 	for _, g := range s.Groups {
-		eg := &pluginv1.SourceGroup{Id: g.ID, Title: g.Title, LeadTaskId: g.Lead, Url: g.URL}
+		eg := &pluginv1.SourceGroup{Id: g.ID, Title: g.Title, LeadTaskId: g.Lead, Url: g.URL, Items: planItems(g.Items), ItemsWord: g.ItemsWord}
 		if sum := g.Summary; sum != nil {
 			eg.Summary = &pluginv1.GroupSummary{Subtitle: sum.Subtitle, Done: int32(sum.Done), Total: int32(sum.Total), DoneWord: sum.DoneWord, Bar: sum.Bar, State: sum.State, Link: link(sum.Link),
 				Attention: int32(sum.Attention), AttentionWord: sum.AttentionWord}
@@ -578,6 +583,18 @@ func (p *Plugin) PublishTasks(ctx context.Context, s Source) error {
 		src.Groups = append(src.Groups, eg)
 	}
 	return p.callCtx(ctx, &pluginv1.Request{Call: &pluginv1.Request_PublishTasks{PublishTasks: &pluginv1.PublishTasks{Source: src}}})
+}
+
+func planItems(its []PlanItem) []*pluginv1.PlanItem {
+	var out []*pluginv1.PlanItem
+	for _, it := range its {
+		ei := &pluginv1.PlanItem{Label: it.Label, State: it.State, Done: it.Done, Url: it.URL, Kind: it.Kind, Note: it.Note, Attention: it.Attention}
+		if !it.Since.IsZero() {
+			ei.SinceS = it.Since.Unix()
+		}
+		out = append(out, ei)
+	}
+	return out
 }
 
 func gateBody(b *GateBody) *pluginv1.GateBody {
@@ -648,6 +665,14 @@ func (p *Plugin) ReadConversation(ctx context.Context, req *pluginv1.ReadConvers
 func (p *Plugin) GitStatus(ctx context.Context, req *pluginv1.GitStatus) (*pluginv1.GitStatusResult, error) {
 	resp, err := p.Call(ctx, &pluginv1.Request{Call: &pluginv1.Request_GitStatus{GitStatus: req}})
 	return resp.GetGitStatus(), err
+}
+
+// ListPullRequests lists the pull requests serai's own work tab cards for
+// a Task, in its order, each with the cover a Card names it by. It needs
+// read. A serai older than the call answers CODE_UNIMPLEMENTED.
+func (p *Plugin) ListPullRequests(ctx context.Context, req *pluginv1.ListPullRequests) (*pluginv1.PullRequestList, error) {
+	resp, err := p.Call(ctx, &pluginv1.Request{Call: &pluginv1.Request_ListPullRequests{ListPullRequests: req}})
+	return resp.GetPullRequestList(), err
 }
 
 // ListEvents reads the journal after a cursor. It needs read.

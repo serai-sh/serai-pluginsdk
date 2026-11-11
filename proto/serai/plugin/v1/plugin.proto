@@ -91,6 +91,7 @@ message Request {
     GitStatus git_status = 10;
     ListEvents list_events = 11;
     SendToTask send_to_task = 12;
+    ListPullRequests list_pull_requests = 13;
 
     InvokeCommand invoke_command = 64;
     ReadSourceConversation read_source_conversation = 65;
@@ -113,6 +114,7 @@ message Response {
     GitStatusResult git_status = 7;
     EventList event_list = 8;
     CommandOutput command_output = 9;
+    PullRequestList pull_request_list = 10;
   }
 }
 
@@ -438,6 +440,45 @@ message GitStatusResult {
   string remote_url = 9;
 }
 
+// ListPullRequests lists the pull requests serai's own work tab cards for a
+// Task, in its order: the one of the branch checked out in its folder while
+// it is open, then those the Task opened (gh pr create, its subagents'
+// too), newest first, unless they are merged or closed, then the others its
+// conversation mentioned that are open, most recently mentioned first, in
+// any repo. A Card that covers one of them stands in for serai's own card
+// of it. Merged and closed pull requests are not in the list: serai shows
+// them as links. The states are gh's on the Task's Host, a minute old at
+// most. Answered with pull_request_list.
+message ListPullRequests {
+  string host = 1;
+  string workspace = 2;
+  string task_id = 3;
+}
+
+message PullRequestList {
+  repeated TaskPullRequest pull_requests = 1;
+  // pending: gh on the Host has not answered for all of them yet, so the
+  // list may still grow, or lose one that turns out merged; ask again in a
+  // few seconds.
+  bool pending = 2;
+}
+
+message TaskPullRequest {
+  string url = 1;
+  string repo = 2; // "owner/name"
+  int32 number = 3;
+  // cover is how a Card's covers names it: "owner/name#123", lowercased.
+  string cover = 4;
+  string title = 5; // "" until gh has answered
+  string state = 6; // draft or open; "" until gh has answered
+  // branch: the pull request of the branch checked out in the Task's folder.
+  bool branch = 7;
+  // opened: the Task opened it, 1 for the first; 0 for one it mentioned.
+  int32 opened = 8;
+  // miss says why gh on the Host could not answer for it, in words.
+  string miss = 9;
+}
+
 // ListEvents reads the journal of what happened across the fleet, oldest
 // first, after a cursor. Answered with event_list.
 message ListEvents {
@@ -570,7 +611,7 @@ message SourceTask {
   int64 context_tokens = 18;
   string cost = 19; // in words, as the source counts it: "$0.42"
   string state_note = 20; // one line: "sandbox paused"
-  repeated Plan plans = 21; // at most 4
+  repeated Plan plans = 21; // at most 4: the Task's own (a session's task list), not its Group's
   repeated PullRequest pull_requests = 22; // at most 20
   repeated Link artifacts = 23; // at most 20: documents its agent wrote
   repeated Preview previews = 24; // at most 20
@@ -585,6 +626,13 @@ message SourceGroup {
   string lead_task_id = 3; // a member, listed first and marked lead; "" for none
   string url = 4; // "" for none
   GroupSummary summary = 5; // unset: serai's own roll-up of the members
+  // items are the Group's own checklist (a Factory plan's work items),
+  // drawn on the Group's page and in its members' Context, never on a
+  // member's row: a Task's plan is its own (Task.plans). At most 50. With
+  // items, serai counts the summary's done and total from them: done of
+  // those not cancelled (state "cancelled").
+  repeated PlanItem items = 6;
+  string items_word = 7; // what the source calls them, at most 24: "work items"
 }
 
 // GroupSummary is the source's overview of a Group, drawn in serai's own
