@@ -701,6 +701,8 @@ type Request struct {
 	//	*Request_SourceTaskSeen
 	//	*Request_AnswerSourceGate
 	//	*Request_StopSourceTask
+	//	*Request_ArchiveSourceTask
+	//	*Request_LeaveSourceTask
 	Call          isRequest_Call `protobuf_oneof:"call"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -914,6 +916,24 @@ func (x *Request) GetStopSourceTask() *StopSourceTask {
 	return nil
 }
 
+func (x *Request) GetArchiveSourceTask() *ArchiveSourceTask {
+	if x != nil {
+		if x, ok := x.Call.(*Request_ArchiveSourceTask); ok {
+			return x.ArchiveSourceTask
+		}
+	}
+	return nil
+}
+
+func (x *Request) GetLeaveSourceTask() *LeaveSourceTask {
+	if x != nil {
+		if x, ok := x.Call.(*Request_LeaveSourceTask); ok {
+			return x.LeaveSourceTask
+		}
+	}
+	return nil
+}
+
 type isRequest_Call interface {
 	isRequest_Call()
 }
@@ -994,6 +1014,14 @@ type Request_StopSourceTask struct {
 	StopSourceTask *StopSourceTask `protobuf:"bytes,69,opt,name=stop_source_task,json=stopSourceTask,proto3,oneof"`
 }
 
+type Request_ArchiveSourceTask struct {
+	ArchiveSourceTask *ArchiveSourceTask `protobuf:"bytes,70,opt,name=archive_source_task,json=archiveSourceTask,proto3,oneof"`
+}
+
+type Request_LeaveSourceTask struct {
+	LeaveSourceTask *LeaveSourceTask `protobuf:"bytes,71,opt,name=leave_source_task,json=leaveSourceTask,proto3,oneof"`
+}
+
 func (*Request_GetConfig) isRequest_Call() {}
 
 func (*Request_RegisterCommand) isRequest_Call() {}
@@ -1031,6 +1059,10 @@ func (*Request_SourceTaskSeen) isRequest_Call() {}
 func (*Request_AnswerSourceGate) isRequest_Call() {}
 
 func (*Request_StopSourceTask) isRequest_Call() {}
+
+func (*Request_ArchiveSourceTask) isRequest_Call() {}
+
+func (*Request_LeaveSourceTask) isRequest_Call() {}
 
 // Response answers one Request: a non-OK status, or OK and its result.
 type Response struct {
@@ -4301,8 +4333,13 @@ type SourceTask struct {
 	PullRequests   []*PullRequest `protobuf:"bytes,22,rep,name=pull_requests,json=pullRequests,proto3" json:"pull_requests,omitempty"` // at most 20
 	Artifacts      []*Link        `protobuf:"bytes,23,rep,name=artifacts,proto3" json:"artifacts,omitempty"`                           // at most 20: documents its agent wrote
 	Previews       []*Preview     `protobuf:"bytes,24,rep,name=previews,proto3" json:"previews,omitempty"`                             // at most 20
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The person may archive the Task in its source, for everyone in it
+	// (ArchiveSourceTask), or leave it, which takes it off their own lists
+	// only (LeaveSourceTask). Unset, a frontend offers neither.
+	Archivable    bool `protobuf:"varint,25,opt,name=archivable,proto3" json:"archivable,omitempty"`
+	Leavable      bool `protobuf:"varint,26,opt,name=leavable,proto3" json:"leavable,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *SourceTask) Reset() {
@@ -4501,6 +4538,20 @@ func (x *SourceTask) GetPreviews() []*Preview {
 		return x.Previews
 	}
 	return nil
+}
+
+func (x *SourceTask) GetArchivable() bool {
+	if x != nil {
+		return x.Archivable
+	}
+	return false
+}
+
+func (x *SourceTask) GetLeavable() bool {
+	if x != nil {
+		return x.Leavable
+	}
+	return false
 }
 
 // SourceGroup is the source's own grouping of its Tasks (a plan's
@@ -5657,6 +5708,99 @@ func (x *StopSourceTask) GetTaskId() string {
 	return ""
 }
 
+// ArchiveSourceTask: the person archived an archivable Task in its source,
+// which closes it for everyone in it. Drop it from the next PublishTasks.
+type ArchiveSourceTask struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArchiveSourceTask) Reset() {
+	*x = ArchiveSourceTask{}
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArchiveSourceTask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArchiveSourceTask) ProtoMessage() {}
+
+func (x *ArchiveSourceTask) ProtoReflect() protoreflect.Message {
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArchiveSourceTask.ProtoReflect.Descriptor instead.
+func (*ArchiveSourceTask) Descriptor() ([]byte, []int) {
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *ArchiveSourceTask) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+// LeaveSourceTask: the person left a leavable Task, which takes it off
+// their own lists in the source; the others in it keep it. Drop it from the
+// next PublishTasks.
+type LeaveSourceTask struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TaskId        string                 `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LeaveSourceTask) Reset() {
+	*x = LeaveSourceTask{}
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LeaveSourceTask) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LeaveSourceTask) ProtoMessage() {}
+
+func (x *LeaveSourceTask) ProtoReflect() protoreflect.Message {
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LeaveSourceTask.ProtoReflect.Descriptor instead.
+func (*LeaveSourceTask) Descriptor() ([]byte, []int) {
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *LeaveSourceTask) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
 var File_serai_plugin_v1_plugin_proto protoreflect.FileDescriptor
 
 const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
@@ -5678,8 +5822,7 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\rserai_version\x18\x05 \x01(\tR\fseraiVersion\x12\x16\n" +
 	"\x06scopes\x18\x06 \x03(\tR\x06scopes\"\x18\n" +
 	"\x06Cancel\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x04R\x02id\"\xf7\n" +
-	"\n" +
+	"\x02id\x18\x01 \x01(\x04R\x02id\"\x9d\f\n" +
 	"\aRequest\x12;\n" +
 	"\n" +
 	"get_config\x18\x01 \x01(\v2\x1a.serai.plugin.v1.GetConfigH\x00R\tgetConfig\x12M\n" +
@@ -5707,7 +5850,9 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x0esend_to_source\x18B \x01(\v2\x1d.serai.plugin.v1.SendToSourceH\x00R\fsendToSource\x12K\n" +
 	"\x10source_task_seen\x18C \x01(\v2\x1f.serai.plugin.v1.SourceTaskSeenH\x00R\x0esourceTaskSeen\x12Q\n" +
 	"\x12answer_source_gate\x18D \x01(\v2!.serai.plugin.v1.AnswerSourceGateH\x00R\x10answerSourceGate\x12K\n" +
-	"\x10stop_source_task\x18E \x01(\v2\x1f.serai.plugin.v1.StopSourceTaskH\x00R\x0estopSourceTaskB\x06\n" +
+	"\x10stop_source_task\x18E \x01(\v2\x1f.serai.plugin.v1.StopSourceTaskH\x00R\x0estopSourceTask\x12T\n" +
+	"\x13archive_source_task\x18F \x01(\v2\".serai.plugin.v1.ArchiveSourceTaskH\x00R\x11archiveSourceTask\x12N\n" +
+	"\x11leave_source_task\x18G \x01(\v2 .serai.plugin.v1.LeaveSourceTaskH\x00R\x0fleaveSourceTaskB\x06\n" +
 	"\x04call\"\x87\x05\n" +
 	"\bResponse\x12/\n" +
 	"\x06status\x18\x01 \x01(\v2\x17.serai.plugin.v1.StatusR\x06status\x12.\n" +
@@ -5950,7 +6095,7 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x04Icon\x12\x1d\n" +
 	"\n" +
 	"media_type\x18\x01 \x01(\tR\tmediaType\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"\x88\a\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"\xc4\a\n" +
 	"\n" +
 	"SourceTask\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -5978,7 +6123,11 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x05plans\x18\x15 \x03(\v2\x15.serai.plugin.v1.PlanR\x05plans\x12A\n" +
 	"\rpull_requests\x18\x16 \x03(\v2\x1c.serai.plugin.v1.PullRequestR\fpullRequests\x123\n" +
 	"\tartifacts\x18\x17 \x03(\v2\x15.serai.plugin.v1.LinkR\tartifacts\x124\n" +
-	"\bpreviews\x18\x18 \x03(\v2\x18.serai.plugin.v1.PreviewR\bpreviews\"\xf0\x01\n" +
+	"\bpreviews\x18\x18 \x03(\v2\x18.serai.plugin.v1.PreviewR\bpreviews\x12\x1e\n" +
+	"\n" +
+	"archivable\x18\x19 \x01(\bR\n" +
+	"archivable\x12\x1a\n" +
+	"\bleavable\x18\x1a \x01(\bR\bleavable\"\xf0\x01\n" +
 	"\vSourceGroup\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -6066,6 +6215,10 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\agate_id\x18\x02 \x01(\tR\x06gateId\x12\x18\n" +
 	"\aapprove\x18\x03 \x01(\bR\aapprove\")\n" +
 	"\x0eStopSourceTask\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\",\n" +
+	"\x11ArchiveSourceTask\x12\x17\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\"*\n" +
+	"\x0fLeaveSourceTask\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId*\x9f\x01\n" +
 	"\x04Code\x12\v\n" +
 	"\aCODE_OK\x10\x00\x12\x16\n" +
@@ -6121,7 +6274,7 @@ func file_serai_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 }
 
 var file_serai_plugin_v1_plugin_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_serai_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 68)
+var file_serai_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 70)
 var file_serai_plugin_v1_plugin_proto_goTypes = []any{
 	(Code)(0),                      // 0: serai.plugin.v1.Code
 	(CommandEffect)(0),             // 1: serai.plugin.v1.CommandEffect
@@ -6195,8 +6348,10 @@ var file_serai_plugin_v1_plugin_proto_goTypes = []any{
 	(*SourceTaskSeen)(nil),         // 69: serai.plugin.v1.SourceTaskSeen
 	(*AnswerSourceGate)(nil),       // 70: serai.plugin.v1.AnswerSourceGate
 	(*StopSourceTask)(nil),         // 71: serai.plugin.v1.StopSourceTask
-	nil,                            // 72: serai.plugin.v1.Config.ValuesEntry
-	nil,                            // 73: serai.plugin.v1.InvokeCommand.FlagsEntry
+	(*ArchiveSourceTask)(nil),      // 72: serai.plugin.v1.ArchiveSourceTask
+	(*LeaveSourceTask)(nil),        // 73: serai.plugin.v1.LeaveSourceTask
+	nil,                            // 74: serai.plugin.v1.Config.ValuesEntry
+	nil,                            // 75: serai.plugin.v1.InvokeCommand.FlagsEntry
 }
 var file_serai_plugin_v1_plugin_proto_depIdxs = []int32{
 	7,  // 0: serai.plugin.v1.Frame.hello:type_name -> serai.plugin.v1.Hello
@@ -6223,70 +6378,72 @@ var file_serai_plugin_v1_plugin_proto_depIdxs = []int32{
 	69, // 21: serai.plugin.v1.Request.source_task_seen:type_name -> serai.plugin.v1.SourceTaskSeen
 	70, // 22: serai.plugin.v1.Request.answer_source_gate:type_name -> serai.plugin.v1.AnswerSourceGate
 	71, // 23: serai.plugin.v1.Request.stop_source_task:type_name -> serai.plugin.v1.StopSourceTask
-	12, // 24: serai.plugin.v1.Response.status:type_name -> serai.plugin.v1.Status
-	11, // 25: serai.plugin.v1.Response.empty:type_name -> serai.plugin.v1.Empty
-	15, // 26: serai.plugin.v1.Response.config:type_name -> serai.plugin.v1.Config
-	29, // 27: serai.plugin.v1.Response.host_list:type_name -> serai.plugin.v1.HostList
-	32, // 28: serai.plugin.v1.Response.task_list:type_name -> serai.plugin.v1.TaskList
-	35, // 29: serai.plugin.v1.Response.conversation_page:type_name -> serai.plugin.v1.ConversationPage
-	44, // 30: serai.plugin.v1.Response.git_status:type_name -> serai.plugin.v1.GitStatusResult
-	49, // 31: serai.plugin.v1.Response.event_list:type_name -> serai.plugin.v1.EventList
-	20, // 32: serai.plugin.v1.Response.command_output:type_name -> serai.plugin.v1.CommandOutput
-	46, // 33: serai.plugin.v1.Response.pull_request_list:type_name -> serai.plugin.v1.PullRequestList
-	0,  // 34: serai.plugin.v1.Status.code:type_name -> serai.plugin.v1.Code
-	50, // 35: serai.plugin.v1.Event.journal_event:type_name -> serai.plugin.v1.JournalEvent
-	72, // 36: serai.plugin.v1.Config.values:type_name -> serai.plugin.v1.Config.ValuesEntry
-	17, // 37: serai.plugin.v1.Command.flags:type_name -> serai.plugin.v1.Flag
-	1,  // 38: serai.plugin.v1.Command.effect:type_name -> serai.plugin.v1.CommandEffect
-	16, // 39: serai.plugin.v1.RegisterCommand.command:type_name -> serai.plugin.v1.Command
-	73, // 40: serai.plugin.v1.InvokeCommand.flags:type_name -> serai.plugin.v1.InvokeCommand.FlagsEntry
-	21, // 41: serai.plugin.v1.RegisterTemplate.template:type_name -> serai.plugin.v1.Template
-	25, // 42: serai.plugin.v1.Card.actions:type_name -> serai.plugin.v1.CardAction
-	24, // 43: serai.plugin.v1.Card.badges:type_name -> serai.plugin.v1.Badge
-	2,  // 44: serai.plugin.v1.Badge.tone:type_name -> serai.plugin.v1.Tone
-	23, // 45: serai.plugin.v1.PublishCard.card:type_name -> serai.plugin.v1.Card
-	30, // 46: serai.plugin.v1.HostList.hosts:type_name -> serai.plugin.v1.Host
-	5,  // 47: serai.plugin.v1.Host.state:type_name -> serai.plugin.v1.HostState
-	33, // 48: serai.plugin.v1.TaskList.tasks:type_name -> serai.plugin.v1.Task
-	3,  // 49: serai.plugin.v1.Task.status:type_name -> serai.plugin.v1.TaskStatus
-	4,  // 50: serai.plugin.v1.Task.agent:type_name -> serai.plugin.v1.Agent
-	36, // 51: serai.plugin.v1.ConversationPage.entries:type_name -> serai.plugin.v1.Entry
-	4,  // 52: serai.plugin.v1.Entry.agent:type_name -> serai.plugin.v1.Agent
-	37, // 53: serai.plugin.v1.Entry.prompt:type_name -> serai.plugin.v1.Prompt
-	38, // 54: serai.plugin.v1.Entry.assistant_text:type_name -> serai.plugin.v1.AssistantText
-	39, // 55: serai.plugin.v1.Entry.thinking:type_name -> serai.plugin.v1.Thinking
-	40, // 56: serai.plugin.v1.Entry.tool_call:type_name -> serai.plugin.v1.ToolCall
-	41, // 57: serai.plugin.v1.Entry.tool_result:type_name -> serai.plugin.v1.ToolResult
-	42, // 58: serai.plugin.v1.Entry.notice:type_name -> serai.plugin.v1.Notice
-	47, // 59: serai.plugin.v1.PullRequestList.pull_requests:type_name -> serai.plugin.v1.TaskPullRequest
-	50, // 60: serai.plugin.v1.EventList.events:type_name -> serai.plugin.v1.JournalEvent
-	3,  // 61: serai.plugin.v1.JournalEvent.from:type_name -> serai.plugin.v1.TaskStatus
-	3,  // 62: serai.plugin.v1.JournalEvent.to:type_name -> serai.plugin.v1.TaskStatus
-	5,  // 63: serai.plugin.v1.JournalEvent.host_state:type_name -> serai.plugin.v1.HostState
-	53, // 64: serai.plugin.v1.PublishTasks.source:type_name -> serai.plugin.v1.Source
-	55, // 65: serai.plugin.v1.Source.tasks:type_name -> serai.plugin.v1.SourceTask
-	56, // 66: serai.plugin.v1.Source.groups:type_name -> serai.plugin.v1.SourceGroup
-	54, // 67: serai.plugin.v1.Source.icon:type_name -> serai.plugin.v1.Icon
-	54, // 68: serai.plugin.v1.Source.icon_dark:type_name -> serai.plugin.v1.Icon
-	3,  // 69: serai.plugin.v1.SourceTask.status:type_name -> serai.plugin.v1.TaskStatus
-	66, // 70: serai.plugin.v1.SourceTask.links:type_name -> serai.plugin.v1.Link
-	58, // 71: serai.plugin.v1.SourceTask.gate:type_name -> serai.plugin.v1.Gate
-	62, // 72: serai.plugin.v1.SourceTask.plans:type_name -> serai.plugin.v1.Plan
-	64, // 73: serai.plugin.v1.SourceTask.pull_requests:type_name -> serai.plugin.v1.PullRequest
-	66, // 74: serai.plugin.v1.SourceTask.artifacts:type_name -> serai.plugin.v1.Link
-	65, // 75: serai.plugin.v1.SourceTask.previews:type_name -> serai.plugin.v1.Preview
-	57, // 76: serai.plugin.v1.SourceGroup.summary:type_name -> serai.plugin.v1.GroupSummary
-	63, // 77: serai.plugin.v1.SourceGroup.items:type_name -> serai.plugin.v1.PlanItem
-	66, // 78: serai.plugin.v1.GroupSummary.link:type_name -> serai.plugin.v1.Link
-	59, // 79: serai.plugin.v1.Gate.body:type_name -> serai.plugin.v1.GateBody
-	60, // 80: serai.plugin.v1.GateBody.sections:type_name -> serai.plugin.v1.GateSection
-	61, // 81: serai.plugin.v1.GateBody.items:type_name -> serai.plugin.v1.GateItem
-	63, // 82: serai.plugin.v1.Plan.items:type_name -> serai.plugin.v1.PlanItem
-	83, // [83:83] is the sub-list for method output_type
-	83, // [83:83] is the sub-list for method input_type
-	83, // [83:83] is the sub-list for extension type_name
-	83, // [83:83] is the sub-list for extension extendee
-	0,  // [0:83] is the sub-list for field type_name
+	72, // 24: serai.plugin.v1.Request.archive_source_task:type_name -> serai.plugin.v1.ArchiveSourceTask
+	73, // 25: serai.plugin.v1.Request.leave_source_task:type_name -> serai.plugin.v1.LeaveSourceTask
+	12, // 26: serai.plugin.v1.Response.status:type_name -> serai.plugin.v1.Status
+	11, // 27: serai.plugin.v1.Response.empty:type_name -> serai.plugin.v1.Empty
+	15, // 28: serai.plugin.v1.Response.config:type_name -> serai.plugin.v1.Config
+	29, // 29: serai.plugin.v1.Response.host_list:type_name -> serai.plugin.v1.HostList
+	32, // 30: serai.plugin.v1.Response.task_list:type_name -> serai.plugin.v1.TaskList
+	35, // 31: serai.plugin.v1.Response.conversation_page:type_name -> serai.plugin.v1.ConversationPage
+	44, // 32: serai.plugin.v1.Response.git_status:type_name -> serai.plugin.v1.GitStatusResult
+	49, // 33: serai.plugin.v1.Response.event_list:type_name -> serai.plugin.v1.EventList
+	20, // 34: serai.plugin.v1.Response.command_output:type_name -> serai.plugin.v1.CommandOutput
+	46, // 35: serai.plugin.v1.Response.pull_request_list:type_name -> serai.plugin.v1.PullRequestList
+	0,  // 36: serai.plugin.v1.Status.code:type_name -> serai.plugin.v1.Code
+	50, // 37: serai.plugin.v1.Event.journal_event:type_name -> serai.plugin.v1.JournalEvent
+	74, // 38: serai.plugin.v1.Config.values:type_name -> serai.plugin.v1.Config.ValuesEntry
+	17, // 39: serai.plugin.v1.Command.flags:type_name -> serai.plugin.v1.Flag
+	1,  // 40: serai.plugin.v1.Command.effect:type_name -> serai.plugin.v1.CommandEffect
+	16, // 41: serai.plugin.v1.RegisterCommand.command:type_name -> serai.plugin.v1.Command
+	75, // 42: serai.plugin.v1.InvokeCommand.flags:type_name -> serai.plugin.v1.InvokeCommand.FlagsEntry
+	21, // 43: serai.plugin.v1.RegisterTemplate.template:type_name -> serai.plugin.v1.Template
+	25, // 44: serai.plugin.v1.Card.actions:type_name -> serai.plugin.v1.CardAction
+	24, // 45: serai.plugin.v1.Card.badges:type_name -> serai.plugin.v1.Badge
+	2,  // 46: serai.plugin.v1.Badge.tone:type_name -> serai.plugin.v1.Tone
+	23, // 47: serai.plugin.v1.PublishCard.card:type_name -> serai.plugin.v1.Card
+	30, // 48: serai.plugin.v1.HostList.hosts:type_name -> serai.plugin.v1.Host
+	5,  // 49: serai.plugin.v1.Host.state:type_name -> serai.plugin.v1.HostState
+	33, // 50: serai.plugin.v1.TaskList.tasks:type_name -> serai.plugin.v1.Task
+	3,  // 51: serai.plugin.v1.Task.status:type_name -> serai.plugin.v1.TaskStatus
+	4,  // 52: serai.plugin.v1.Task.agent:type_name -> serai.plugin.v1.Agent
+	36, // 53: serai.plugin.v1.ConversationPage.entries:type_name -> serai.plugin.v1.Entry
+	4,  // 54: serai.plugin.v1.Entry.agent:type_name -> serai.plugin.v1.Agent
+	37, // 55: serai.plugin.v1.Entry.prompt:type_name -> serai.plugin.v1.Prompt
+	38, // 56: serai.plugin.v1.Entry.assistant_text:type_name -> serai.plugin.v1.AssistantText
+	39, // 57: serai.plugin.v1.Entry.thinking:type_name -> serai.plugin.v1.Thinking
+	40, // 58: serai.plugin.v1.Entry.tool_call:type_name -> serai.plugin.v1.ToolCall
+	41, // 59: serai.plugin.v1.Entry.tool_result:type_name -> serai.plugin.v1.ToolResult
+	42, // 60: serai.plugin.v1.Entry.notice:type_name -> serai.plugin.v1.Notice
+	47, // 61: serai.plugin.v1.PullRequestList.pull_requests:type_name -> serai.plugin.v1.TaskPullRequest
+	50, // 62: serai.plugin.v1.EventList.events:type_name -> serai.plugin.v1.JournalEvent
+	3,  // 63: serai.plugin.v1.JournalEvent.from:type_name -> serai.plugin.v1.TaskStatus
+	3,  // 64: serai.plugin.v1.JournalEvent.to:type_name -> serai.plugin.v1.TaskStatus
+	5,  // 65: serai.plugin.v1.JournalEvent.host_state:type_name -> serai.plugin.v1.HostState
+	53, // 66: serai.plugin.v1.PublishTasks.source:type_name -> serai.plugin.v1.Source
+	55, // 67: serai.plugin.v1.Source.tasks:type_name -> serai.plugin.v1.SourceTask
+	56, // 68: serai.plugin.v1.Source.groups:type_name -> serai.plugin.v1.SourceGroup
+	54, // 69: serai.plugin.v1.Source.icon:type_name -> serai.plugin.v1.Icon
+	54, // 70: serai.plugin.v1.Source.icon_dark:type_name -> serai.plugin.v1.Icon
+	3,  // 71: serai.plugin.v1.SourceTask.status:type_name -> serai.plugin.v1.TaskStatus
+	66, // 72: serai.plugin.v1.SourceTask.links:type_name -> serai.plugin.v1.Link
+	58, // 73: serai.plugin.v1.SourceTask.gate:type_name -> serai.plugin.v1.Gate
+	62, // 74: serai.plugin.v1.SourceTask.plans:type_name -> serai.plugin.v1.Plan
+	64, // 75: serai.plugin.v1.SourceTask.pull_requests:type_name -> serai.plugin.v1.PullRequest
+	66, // 76: serai.plugin.v1.SourceTask.artifacts:type_name -> serai.plugin.v1.Link
+	65, // 77: serai.plugin.v1.SourceTask.previews:type_name -> serai.plugin.v1.Preview
+	57, // 78: serai.plugin.v1.SourceGroup.summary:type_name -> serai.plugin.v1.GroupSummary
+	63, // 79: serai.plugin.v1.SourceGroup.items:type_name -> serai.plugin.v1.PlanItem
+	66, // 80: serai.plugin.v1.GroupSummary.link:type_name -> serai.plugin.v1.Link
+	59, // 81: serai.plugin.v1.Gate.body:type_name -> serai.plugin.v1.GateBody
+	60, // 82: serai.plugin.v1.GateBody.sections:type_name -> serai.plugin.v1.GateSection
+	61, // 83: serai.plugin.v1.GateBody.items:type_name -> serai.plugin.v1.GateItem
+	63, // 84: serai.plugin.v1.Plan.items:type_name -> serai.plugin.v1.PlanItem
+	85, // [85:85] is the sub-list for method output_type
+	85, // [85:85] is the sub-list for method input_type
+	85, // [85:85] is the sub-list for extension type_name
+	85, // [85:85] is the sub-list for extension extendee
+	0,  // [0:85] is the sub-list for field type_name
 }
 
 func init() { file_serai_plugin_v1_plugin_proto_init() }
@@ -6321,6 +6478,8 @@ func file_serai_plugin_v1_plugin_proto_init() {
 		(*Request_SourceTaskSeen)(nil),
 		(*Request_AnswerSourceGate)(nil),
 		(*Request_StopSourceTask)(nil),
+		(*Request_ArchiveSourceTask)(nil),
+		(*Request_LeaveSourceTask)(nil),
 	}
 	file_serai_plugin_v1_plugin_proto_msgTypes[4].OneofWrappers = []any{
 		(*Response_Empty)(nil),
@@ -6347,7 +6506,7 @@ func file_serai_plugin_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_serai_plugin_v1_plugin_proto_rawDesc), len(file_serai_plugin_v1_plugin_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   68,
+			NumMessages:   70,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

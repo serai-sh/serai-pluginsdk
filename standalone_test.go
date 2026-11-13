@@ -10,7 +10,9 @@ package pluginsdk_test
 
 import (
 	"context"
+	"fmt"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,5 +203,76 @@ func TestEventsReachOnEvent(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("the event never reached OnEvent")
+	}
+}
+
+// Archivable and Leavable reach the API on each Task, the gateway's
+// archive and leave reach the handlers, a handler's Refused comes back
+// refused, and a source with no Leave handler answers UNIMPLEMENTED.
+func TestASourceArchivesAndLeaves(t *testing.T) {
+	a, b := net.Pipe()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	published := make(chan *pluginv1.Source, 1)
+	conn := pluginwire.New(b, pluginwire.Options{
+		Hello: &pluginv1.Hello{Name: "remote", Version: "0.1.0", SeraiVersion: "fake 1.2.3", Scopes: []string{"source"}},
+		OnRequest: func(_ context.Context, req *pluginv1.Request) *pluginv1.Response {
+			switch c := req.Call.(type) {
+			case *pluginv1.Request_GetConfig:
+				return &pluginv1.Response{Result: &pluginv1.Response_Config{Config: &pluginv1.Config{}}}
+			case *pluginv1.Request_PublishTasks:
+				published <- c.PublishTasks.GetSource()
+				return pluginwire.OK()
+			}
+			return nil
+		},
+	})
+	t.Cleanup(func() { conn.Close() })
+	got := make(chan string, 4)
+	go pluginsdk.Serve(ctx, a, "remote", func(p *pluginsdk.Plugin) error {
+		p.ServeSource(pluginsdk.SourceHandler{
+			Archive: func(_ context.Context, id string) error {
+				got <- "archive " + id
+				if id == "old" {
+					return pluginsdk.Refused("only the owner may archive it")
+				}
+				return nil
+			},
+		})
+		return p.PublishTasks(ctx, pluginsdk.Source{Label: "Remote", Tasks: []pluginsdk.ExternalTask{
+			{ID: "own", Name: "Own", Status: pluginsdk.StatusStabled, URL: "https://agents.example.com/own", Archivable: true},
+			{ID: "joined", Name: "Joined", Status: pluginsdk.StatusStabled, URL: "https://agents.example.com/joined", Leavable: true},
+			{ID: "old", Name: "Old", Status: pluginsdk.StatusStabled, URL: "https://agents.example.com/old"},
+		}})
+	})
+	var src *pluginv1.Source
+	select {
+	case src = <-published:
+	case <-ctx.Done():
+		t.Fatal("the plugin never published")
+	}
+	var flags []string
+	for _, x := range src.GetTasks() {
+		flags = append(flags, fmt.Sprintf("%s %v %v", x.GetId(), x.GetArchivable(), x.GetLeavable()))
+	}
+	if want := "own true false,joined false true,old false false"; strings.Join(flags, ",") != want {
+		t.Errorf("published %s, want %s", strings.Join(flags, ","), want)
+	}
+	call := func(r *pluginv1.Request) error { _, err := conn.Call(ctx, r); return err }
+	archive := func(id string) *pluginv1.Request {
+		return &pluginv1.Request{Call: &pluginv1.Request_ArchiveSourceTask{ArchiveSourceTask: &pluginv1.ArchiveSourceTask{TaskId: id}}}
+	}
+	if err := call(archive("own")); err != nil {
+		t.Errorf("archive own: %v", err)
+	}
+	if err := call(archive("old")); pluginsdk.CodeOf(err) != pluginv1.Code_CODE_REFUSED || !strings.Contains(err.Error(), "only the owner may archive it") {
+		t.Errorf("archive old: %v, want the handler's refusal", err)
+	}
+	err := call(&pluginv1.Request{Call: &pluginv1.Request_LeaveSourceTask{LeaveSourceTask: &pluginv1.LeaveSourceTask{TaskId: "joined"}}})
+	if pluginsdk.CodeOf(err) != pluginv1.Code_CODE_UNIMPLEMENTED || !strings.Contains(err.Error(), "this source serves no leave") {
+		t.Errorf("leave without a handler: %v, want UNIMPLEMENTED", err)
+	}
+	if a, b := <-got, <-got; a != "archive own" || b != "archive old" {
+		t.Errorf("the handler got %q, %q", a, b)
 	}
 }
