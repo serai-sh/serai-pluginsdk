@@ -99,6 +99,8 @@ message Request {
     SourceTaskSeen source_task_seen = 67;
     AnswerSourceGate answer_source_gate = 68;
     StopSourceTask stop_source_task = 69;
+    ArchiveSourceTask archive_source_task = 70;
+    LeaveSourceTask leave_source_task = 71;
   }
 }
 
@@ -542,9 +544,10 @@ message SendToTask {
 //
 // A plugin can show Tasks that live in another system (a cloud agent's
 // sessions) beside serai's own, in the sidebar and the fleet, under the
-// label it gives. They have no terminal; nothing in serai archives, moves or
-// kills one. The gateway keeps them only while the plugin is connected: a
-// restarted plugin publishes them again.
+// label it gives. They have no terminal; serai itself never archives, moves
+// or kills one, and the person archives or leaves one only through its
+// source (ArchiveSourceTask, LeaveSourceTask). The gateway keeps them only
+// while the plugin is connected: a restarted plugin publishes them again.
 
 // PublishTasks replaces everything the plugin showed before. The gateway
 // refuses the whole set when a string isn't one line of plain text, a URL
@@ -615,6 +618,12 @@ message SourceTask {
   repeated PullRequest pull_requests = 22; // at most 20
   repeated Link artifacts = 23; // at most 20: documents its agent wrote
   repeated Preview previews = 24; // at most 20
+
+  // The person may archive the Task in its source, for everyone in it
+  // (ArchiveSourceTask), or leave it, which takes it off their own lists
+  // only (LeaveSourceTask). Unset, a frontend offers neither.
+  bool archivable = 25;
+  bool leavable = 26;
 }
 
 // SourceGroup is the source's own grouping of its Tasks (a plan's
@@ -762,5 +771,18 @@ message AnswerSourceGate {
 
 // StopSourceTask: the person stopped the Task's running turn.
 message StopSourceTask {
+  string task_id = 1;
+}
+
+// ArchiveSourceTask: the person archived an archivable Task in its source,
+// which closes it for everyone in it. Drop it from the next PublishTasks.
+message ArchiveSourceTask {
+  string task_id = 1;
+}
+
+// LeaveSourceTask: the person left a leavable Task, which takes it off
+// their own lists in the source; the others in it keep it. Drop it from the
+// next PublishTasks.
+message LeaveSourceTask {
   string task_id = 1;
 }

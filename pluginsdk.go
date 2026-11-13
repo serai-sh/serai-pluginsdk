@@ -231,7 +231,10 @@ type GroupSummary struct {
 // changes, and a frontend showing it reads it again. AcceptsMessages offers
 // the composer (SourceHandler.Send), MessagesWhileWorking also while the
 // Task is underway, Stoppable a Stop while it is (SourceHandler.Stop), and
-// Gate the person's answer at the gate (SourceHandler.Answer).
+// Gate the person's answer at the gate (SourceHandler.Answer). Archivable
+// offers "Archive in <Label>" in the Task's menu (SourceHandler.Archive),
+// which closes it for everyone in it, and Leavable "Leave"
+// (SourceHandler.Leave), which takes it off the person's own lists.
 type ExternalTask struct {
 	ID, Name, Project, Status, URL, Preview string
 	LastActivity                            time.Time
@@ -240,6 +243,8 @@ type ExternalTask struct {
 	AcceptsMessages                         bool
 	MessagesWhileWorking                    bool
 	Stoppable                               bool
+	Archivable                              bool
+	Leavable                                bool
 	Gate                                    *Gate
 	// Group is the ID of the Source's Group the Task is in, "" for none.
 	Group string
@@ -553,6 +558,7 @@ func (p *Plugin) PublishTasks(ctx context.Context, s Source) error {
 		}
 		et := &pluginv1.SourceTask{Id: t.ID, Name: t.Name, Project: t.Project, Status: st, Url: t.URL, Preview: t.Preview,
 			ConversationRev: t.ConversationRev, AcceptsMessages: t.AcceptsMessages, MessagesWhileWorking: t.MessagesWhileWorking, Stoppable: t.Stoppable,
+			Archivable: t.Archivable, Leavable: t.Leavable,
 			GroupId: t.Group, Links: links(t.Links), Artifacts: links(t.Artifacts),
 			Participants: t.Participants, Model: t.Model, Cost: t.Cost, StateNote: t.StateNote,
 			ContextPercent: int32(t.ContextPercent), ContextTokens: t.ContextTokens}
@@ -719,6 +725,10 @@ func (p *Plugin) callCtx(ctx context.Context, req *pluginv1.Request) error {
 //     published with, by its ID. The gateway has checked the Task is at
 //     the gate with that Gate and that the Gate lets the person answer so.
 //   - Stop is the person's stop of a Stoppable Task's running turn.
+//   - Archive is the person's archive of an Archivable Task in the source,
+//     for everyone in it; Leave takes a Leavable Task off the person's own
+//     lists there. Drop the Task from the next PublishTasks once it is
+//     done, and return Refused(...) in the source's words when it won't.
 //
 // The gateway calls them only for a Task the plugin shows, and only for the
 // person's own frontends, never for MCP, another plugin or a relay.
@@ -728,6 +738,8 @@ type SourceHandler struct {
 	Seen         func(ctx context.Context, taskID string) error
 	Answer       func(ctx context.Context, taskID, gateID string, approve bool) error
 	Stop         func(ctx context.Context, taskID string) error
+	Archive      func(ctx context.Context, taskID string) error
+	Leave        func(ctx context.Context, taskID string) error
 }
 
 // ServeSource answers the gateway's calls about the plugin's Tasks with h.
@@ -789,6 +801,16 @@ func (p *Plugin) handleSource(ctx context.Context, req *pluginv1.Request) *plugi
 			return unserved("stop")
 		}
 		return done(h.Stop(ctx, c.StopSourceTask.GetTaskId()))
+	case *pluginv1.Request_ArchiveSourceTask:
+		if h.Archive == nil {
+			return unserved("archive")
+		}
+		return done(h.Archive(ctx, c.ArchiveSourceTask.GetTaskId()))
+	case *pluginv1.Request_LeaveSourceTask:
+		if h.Leave == nil {
+			return unserved("leave")
+		}
+		return done(h.Leave(ctx, c.LeaveSourceTask.GetTaskId()))
 	}
 	return nil
 }
