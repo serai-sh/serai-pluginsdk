@@ -35,6 +35,7 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -131,6 +132,25 @@ type Card struct {
 	// Details is Markdown folded behind "more". With it set, Markdown is
 	// the summary and Actions fold away with the details.
 	Details string
+	// URL is where the Card's subject lives (its pull request, say): the
+	// title links to it. http or https. Since SDK 0.5.0.
+	URL string
+	// Facts are the details as rows, a label, a dot in a tone and a line of
+	// text each, folded behind "more" as Details are. A serai that draws
+	// facts shows them in place of Details; for one older than SDK 0.5.0,
+	// PublishCard writes Details from the facts when it is empty, so set
+	// Facts alone. At most 16. Since SDK 0.5.0.
+	Facts []CardFact
+}
+
+// CardFact is one row of a Card's details: Label "CI", Tone ToneInfo, Text
+// "10 running". The frontend lines the labels up and colours the dot from
+// its theme. URL makes the text a link; Note is Markdown under the row
+// (the failing checks under CI, say), at most 4 KiB.
+type CardFact struct {
+	Label, Text string
+	Tone        Tone
+	URL, Note   string
 }
 
 // Badge is a short label by a Card's title, "A" or "#3 in queue".
@@ -545,7 +565,13 @@ func effect(e Effect) pluginv1.CommandEffect {
 
 // PublishCard shows or replaces a Card. It needs the cards scope.
 func (p *Plugin) PublishCard(ctx context.Context, c Card) error {
-	card := &pluginv1.Card{Id: c.ID, Host: c.Host, TaskId: c.TaskID, Title: c.Title, Markdown: c.Markdown, Covers: c.Covers, Details: c.Details}
+	card := &pluginv1.Card{Id: c.ID, Host: c.Host, TaskId: c.TaskID, Title: c.Title, Markdown: c.Markdown, Covers: c.Covers, Details: c.Details, Url: c.URL}
+	for _, f := range c.Facts {
+		card.Facts = append(card.Facts, &pluginv1.CardFact{Label: f.Label, Tone: pluginv1.Tone(f.Tone), Text: f.Text, Url: f.URL, Note: f.Note})
+	}
+	if card.Details == "" {
+		card.Details = FactsMarkdown(c.Facts)
+	}
 	for _, a := range c.Actions {
 		card.Actions = append(card.Actions, &pluginv1.CardAction{Label: a.Label, Command: a.Command})
 	}
@@ -553,6 +579,58 @@ func (p *Plugin) PublishCard(ctx context.Context, c Card) error {
 		card.Badges = append(card.Badges, &pluginv1.Badge{Label: b.Label, Tone: pluginv1.Tone(b.Tone)})
 	}
 	return p.callCtx(ctx, &pluginv1.Request{Call: &pluginv1.Request_PublishCard{PublishCard: &pluginv1.PublishCard{Card: card}}})
+}
+
+// maxDetails is the most details the gateway takes.
+const maxDetails = 16 << 10
+
+// FactsMarkdown is facts as the Markdown a serai older than SDK 0.5.0
+// shows in their place: a bold label and the text, a note under it, one
+// paragraph a fact. Past the 16 KiB details take, it leaves the notes out,
+// then the links.
+func FactsMarkdown(facts []CardFact) string {
+	for _, full := range []struct{ notes, links bool }{{true, true}, {false, true}, {false, false}} {
+		var parts []string
+		for _, f := range facts {
+			line := "**" + mdEscape(f.Label) + "**"
+			switch {
+			case f.URL != "" && full.links:
+				line += " [" + mdEscape(firstNonEmpty(f.Text, f.URL)) + "](" + f.URL + ")"
+			case f.Text != "":
+				line += " " + mdEscape(f.Text)
+			}
+			if f.Note != "" && full.notes {
+				line += "  \n" + strings.TrimRight(f.Note, "\n")
+			}
+			parts = append(parts, line)
+		}
+		if md := strings.Join(parts, "\n\n"); len(md) <= maxDetails {
+			if md != "" {
+				md += "\n"
+			}
+			return md
+		}
+	}
+	return ""
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// mdEscape keeps a label or a line of text from turning into Markdown.
+func mdEscape(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if strings.ContainsRune("\\`*_[]<>|~", r) || (i == 0 && strings.ContainsRune("#-+", r)) {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 // DeleteCard removes a Card.

@@ -88,7 +88,10 @@ a backoff when it exits. Its stderr goes to `~/.serai/v2/plugins/greet.log`. `Ma
   every time) or `Local` (no tool at all).
 - `PublishCard` / `DeleteCard`: Markdown on one Task (`Host` and `TaskID`), on a Host (`Host`), or
   everywhere. Publishing an ID again replaces the Card. An `Action` is a button that runs one of
-  this plugin's own commands, never anyone else's.
+  this plugin's own commands, never anyone else's. `URL` makes the title a link, and `Facts`
+  (since 0.5.0) are the folded details as rows: a label, a dot in a `Tone`, a line of text, an
+  optional link and a Markdown note. A serai older than 0.5.0's draws `Details` instead, which
+  `PublishCard` writes from the facts when it is empty.
 - `Template`: a prefill for the new-Task dialog.
 - `OnEvent`: the journal events the plugin's `events:<kind>` scopes cover, one at a time, in
   order. `Event.Status()` reads a status change: the Task, its Project, and the statuses it moved

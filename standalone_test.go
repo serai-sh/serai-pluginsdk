@@ -174,6 +174,62 @@ func TestPublishCardCarriesCoversBadgesAndDetails(t *testing.T) {
 	}
 }
 
+// A Card's url and facts reach the API as they were given, and the details
+// an older serai shows in their place are written from the facts when the
+// plugin left them empty; details it set are its own.
+func TestPublishCardCarriesURLAndFacts(t *testing.T) {
+	facts := []pluginsdk.CardFact{
+		{Label: "CI", Tone: pluginsdk.ToneInfo, Text: "10 running", URL: "https://github.com/o/r/pull/1/checks", Note: "✗ [lint](https://x.test/1)"},
+		{Label: "Automerge", Tone: pluginsdk.ToneNeutral, Text: "off"},
+	}
+	for _, tc := range []struct{ details, want string }{
+		{"", "**CI** [10 running](https://github.com/o/r/pull/1/checks)  \n✗ [lint](https://x.test/1)\n\n**Automerge** off\n"},
+		{"own", "own"},
+	} {
+		a, b := net.Pipe()
+		g := startFakeGateway(t, b)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		go pluginsdk.Serve(ctx, a, "hello", func(p *pluginsdk.Plugin) error {
+			return p.PublishCard(ctx, pluginsdk.Card{ID: "pr", Title: "#1", URL: "https://github.com/o/r/pull/1", Facts: facts, Details: tc.details})
+		})
+		select {
+		case c := <-g.cards:
+			if c.GetUrl() != "https://github.com/o/r/pull/1" || len(c.GetFacts()) != 2 {
+				t.Fatalf("card = %v", c)
+			}
+			f := c.GetFacts()[0]
+			if f.GetLabel() != "CI" || f.GetTone().String() != "TONE_INFO" || f.GetText() != "10 running" || f.GetUrl() != facts[0].URL || f.GetNote() != facts[0].Note {
+				t.Errorf("fact = %v", f)
+			}
+			if c.GetDetails() != tc.want {
+				t.Errorf("details = %q, want %q", c.GetDetails(), tc.want)
+			}
+		case <-ctx.Done():
+			t.Fatal("the plugin never published its Card")
+		}
+		cancel()
+	}
+}
+
+// Facts whose Markdown would pass the 16 KiB details take leave out their
+// notes there, then their links, so the Card is never refused for them.
+func TestFactsMarkdownKeepsToTheDetailsBound(t *testing.T) {
+	var facts []pluginsdk.CardFact
+	for i := 0; i < 16; i++ {
+		facts = append(facts, pluginsdk.CardFact{Label: "f", Text: "t", URL: "https://x.test/" + strings.Repeat("u", 500), Note: strings.Repeat("n", 4000)})
+	}
+	md := pluginsdk.FactsMarkdown(facts)
+	if len(md) > 16<<10 || strings.Contains(md, "nnn") || !strings.Contains(md, "](https://x.test/") {
+		t.Errorf("len %d, notes left out, links kept: %.200q", len(md), md)
+	}
+	if got := pluginsdk.FactsMarkdown([]pluginsdk.CardFact{{Label: "*a*", Text: "#1 [x]"}}); got != "**\\*a\\*** \\#1 \\[x\\]\n" {
+		t.Errorf("escaped = %q", got)
+	}
+	if pluginsdk.FactsMarkdown(nil) != "" {
+		t.Error("no facts, no details")
+	}
+}
+
 // A status event reaches OnEvent with its Task and its statuses in the SDK's
 // words.
 func TestEventsReachOnEvent(t *testing.T) {

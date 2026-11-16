@@ -245,6 +245,32 @@ message Card {
   // details is Markdown behind "more", folded until the person opens it,
   // which the frontend remembers per window. At most 16 KiB.
   string details = 9;
+  // url is where the Card's subject lives, the pull request a Card speaks
+  // for, say: the frontend makes the title a link to it. http or https,
+  // at most 2 KiB.
+  string url = 10;
+  // facts are the Card's details as rows, folded behind "more" like
+  // details: a label, a status dot in a tone and a line of text each. A
+  // serai that draws facts shows them in place of details, so details is
+  // what a serai older than SDK 0.5.0 shows instead (the Go SDK writes it
+  // from the facts when it is empty). At most 16.
+  repeated CardFact facts = 11;
+}
+
+// CardFact is one row of a Card's details: "CI", a dot in its tone, "10
+// running". The frontend aligns the labels and colours the dot from its own
+// theme, as it does a badge's.
+message CardFact {
+  string label = 1; // one line, at most 24 characters
+  Tone tone = 2;
+  string text = 3; // one line, at most 200 characters; may be empty
+  // url makes the text a link, the checks page of a pull request, say:
+  // http or https, at most 2 KiB.
+  string url = 4;
+  // note is Markdown under the row, beside its text: the failing checks
+  // under CI, the reviewers under Review. At most 4 KiB, and the notes of a
+  // Card's facts 16 KiB together.
+  string note = 5;
 }
 
 // Badge is a short label by a Card's title, "A" or "#3 in queue".
