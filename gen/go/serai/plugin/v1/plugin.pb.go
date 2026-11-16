@@ -4556,21 +4556,34 @@ func (x *SourceTask) GetLeavable() bool {
 
 // SourceGroup is the source's own grouping of its Tasks (a plan's
 // sessions). serai shows each member once, under its Group; it never renames
-// one, leads it, archives it or broadcasts to it.
+// one, archives it or broadcasts to it.
 type SourceGroup struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Title      string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`                               // one line, at most 80
-	LeadTaskId string                 `protobuf:"bytes,3,opt,name=lead_task_id,json=leadTaskId,proto3" json:"lead_task_id,omitempty"` // a member, listed first and marked lead; "" for none
-	Url        string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`                                   // "" for none
-	Summary    *GroupSummary          `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`                           // unset: serai's own roll-up of the members
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Title string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"` // one line, at most 80
+	// lead_task_id is ignored since SDK 0.4.0: no Group has a lead (since
+	// 2026-11-13). It stays so a plugin built before still publishes.
+	LeadTaskId string        `protobuf:"bytes,3,opt,name=lead_task_id,json=leadTaskId,proto3" json:"lead_task_id,omitempty"`
+	Url        string        `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`         // "" for none
+	Summary    *GroupSummary `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"` // unset: serai's own roll-up of the members
 	// items are the Group's own checklist (a Factory plan's work items),
 	// drawn on the Group's page and in its members' Context, never on a
 	// member's row: a Task's plan is its own (Task.plans). At most 50. With
 	// items, serai counts the summary's done and total from them: done of
-	// those not cancelled (state "cancelled").
-	Items         []*PlanItem `protobuf:"bytes,6,rep,name=items,proto3" json:"items,omitempty"`
-	ItemsWord     string      `protobuf:"bytes,7,opt,name=items_word,json=itemsWord,proto3" json:"items_word,omitempty"` // what the source calls them, at most 24: "work items"
+	// those neither cancelled (state "cancelled") nor uncounted.
+	Items     []*PlanItem `protobuf:"bytes,6,rep,name=items,proto3" json:"items,omitempty"`
+	ItemsWord string      `protobuf:"bytes,7,opt,name=items_word,json=itemsWord,proto3" json:"items_word,omitempty"` // what the source calls them, at most 24: "work items"
+	// The Group's detail, drawn on its page under its title (a Factory
+	// plan's overview), each optional:
+	//   - sections: its Markdown in parts, as a gate's body has them (Goal,
+	//     Approach, ...), at most 8, 48 KiB of Markdown in all;
+	//   - facts: a line each ("Verification · verified"), at most 8;
+	//   - pull_requests: what its members opened, at most 20;
+	//   - links: its threads, tickets and pages, at most 20.
+	Sections      []*GateSection `protobuf:"bytes,8,rep,name=sections,proto3" json:"sections,omitempty"`
+	Facts         []*Fact        `protobuf:"bytes,9,rep,name=facts,proto3" json:"facts,omitempty"`
+	PullRequests  []*PullRequest `protobuf:"bytes,10,rep,name=pull_requests,json=pullRequests,proto3" json:"pull_requests,omitempty"`
+	Links         []*Link        `protobuf:"bytes,11,rep,name=links,proto3" json:"links,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4654,6 +4667,104 @@ func (x *SourceGroup) GetItemsWord() string {
 	return ""
 }
 
+func (x *SourceGroup) GetSections() []*GateSection {
+	if x != nil {
+		return x.Sections
+	}
+	return nil
+}
+
+func (x *SourceGroup) GetFacts() []*Fact {
+	if x != nil {
+		return x.Facts
+	}
+	return nil
+}
+
+func (x *SourceGroup) GetPullRequests() []*PullRequest {
+	if x != nil {
+		return x.PullRequests
+	}
+	return nil
+}
+
+func (x *SourceGroup) GetLinks() []*Link {
+	if x != nil {
+		return x.Links
+	}
+	return nil
+}
+
+// Fact is one line about a Group: a label and its value, which may open a
+// page (url) or one of the source's Tasks (task_id), not both.
+type Fact struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`                 // one line, at most 40: "Verification"
+	Value         string                 `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`                 // one line, at most 200: "verified"
+	Url           string                 `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`                     // http or https; "" for none
+	TaskId        string                 `protobuf:"bytes,4,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"` // a Task the source shows; "" for none
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Fact) Reset() {
+	*x = Fact{}
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Fact) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Fact) ProtoMessage() {}
+
+func (x *Fact) ProtoReflect() protoreflect.Message {
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Fact.ProtoReflect.Descriptor instead.
+func (*Fact) Descriptor() ([]byte, []int) {
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *Fact) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *Fact) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *Fact) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *Fact) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
 // GroupSummary is the source's overview of a Group, drawn in serai's own
 // type in place of its roll-up. serai's at-the-gate count stands beside it
 // always.
@@ -4676,7 +4787,7 @@ type GroupSummary struct {
 
 func (x *GroupSummary) Reset() {
 	*x = GroupSummary{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[51]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4688,7 +4799,7 @@ func (x *GroupSummary) String() string {
 func (*GroupSummary) ProtoMessage() {}
 
 func (x *GroupSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[51]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4701,7 +4812,7 @@ func (x *GroupSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroupSummary.ProtoReflect.Descriptor instead.
 func (*GroupSummary) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{51}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *GroupSummary) GetSubtitle() string {
@@ -4785,7 +4896,7 @@ type Gate struct {
 
 func (x *Gate) Reset() {
 	*x = Gate{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[52]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4797,7 +4908,7 @@ func (x *Gate) String() string {
 func (*Gate) ProtoMessage() {}
 
 func (x *Gate) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[52]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4810,7 +4921,7 @@ func (x *Gate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Gate.ProtoReflect.Descriptor instead.
 func (*Gate) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{52}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *Gate) GetId() string {
@@ -4876,7 +4987,7 @@ type GateBody struct {
 
 func (x *GateBody) Reset() {
 	*x = GateBody{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[53]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4888,7 +4999,7 @@ func (x *GateBody) String() string {
 func (*GateBody) ProtoMessage() {}
 
 func (x *GateBody) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[53]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4901,7 +5012,7 @@ func (x *GateBody) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateBody.ProtoReflect.Descriptor instead.
 func (*GateBody) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{53}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *GateBody) GetAction() string {
@@ -4950,7 +5061,7 @@ type GateSection struct {
 
 func (x *GateSection) Reset() {
 	*x = GateSection{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[54]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4962,7 +5073,7 @@ func (x *GateSection) String() string {
 func (*GateSection) ProtoMessage() {}
 
 func (x *GateSection) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[54]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4975,7 +5086,7 @@ func (x *GateSection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateSection.ProtoReflect.Descriptor instead.
 func (*GateSection) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{54}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *GateSection) GetHeading() string {
@@ -5010,7 +5121,7 @@ type GateItem struct {
 
 func (x *GateItem) Reset() {
 	*x = GateItem{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[55]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5022,7 +5133,7 @@ func (x *GateItem) String() string {
 func (*GateItem) ProtoMessage() {}
 
 func (x *GateItem) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[55]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5035,7 +5146,7 @@ func (x *GateItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GateItem.ProtoReflect.Descriptor instead.
 func (*GateItem) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{55}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *GateItem) GetLabel() string {
@@ -5070,7 +5181,7 @@ type Plan struct {
 
 func (x *Plan) Reset() {
 	*x = Plan{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[56]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5082,7 +5193,7 @@ func (x *Plan) String() string {
 func (*Plan) ProtoMessage() {}
 
 func (x *Plan) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[56]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5095,7 +5206,7 @@ func (x *Plan) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Plan.ProtoReflect.Descriptor instead.
 func (*Plan) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{56}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *Plan) GetTitle() string {
@@ -5120,22 +5231,29 @@ func (x *Plan) GetItems() []*PlanItem {
 }
 
 type PlanItem struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Label         string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
-	State         string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"` // the source's word: "merged", "open"
-	Done          bool                   `protobuf:"varint,3,opt,name=done,proto3" json:"done,omitempty"`  // counts toward the plan's progress
-	Url           string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
-	Kind          string                 `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`                    // one word: "feature", "bug"
-	SinceS        int64                  `protobuf:"varint,6,opt,name=since_s,json=sinceS,proto3" json:"since_s,omitempty"` // when it reached its state, unix seconds; 0 when not said
-	Note          string                 `protobuf:"bytes,7,opt,name=note,proto3" json:"note,omitempty"`                    // one line, at most 300: why it waits
-	Attention     bool                   `protobuf:"varint,8,opt,name=attention,proto3" json:"attention,omitempty"`         // it needs a person before it goes on: the note is a warning
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Label     string                 `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
+	State     string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"` // the source's word: "merged", "open"
+	Done      bool                   `protobuf:"varint,3,opt,name=done,proto3" json:"done,omitempty"`  // counts toward the plan's progress
+	Url       string                 `protobuf:"bytes,4,opt,name=url,proto3" json:"url,omitempty"`
+	Kind      string                 `protobuf:"bytes,5,opt,name=kind,proto3" json:"kind,omitempty"`                    // one word: "feature", "bug"
+	SinceS    int64                  `protobuf:"varint,6,opt,name=since_s,json=sinceS,proto3" json:"since_s,omitempty"` // when it reached its state, unix seconds; 0 when not said
+	Note      string                 `protobuf:"bytes,7,opt,name=note,proto3" json:"note,omitempty"`                    // one line, at most 300: why it waits
+	Attention bool                   `protobuf:"varint,8,opt,name=attention,proto3" json:"attention,omitempty"`         // it needs a person before it goes on: the note is a warning
+	// uncounted: listed, but not part of the progress (done of total), as a
+	// cancelled one isn't: a work item an agent only suggested.
+	Uncounted bool `protobuf:"varint,9,opt,name=uncounted,proto3" json:"uncounted,omitempty"`
+	// task_id is the source's Task that works on the item (a work item's
+	// building session), which its row opens; "" while none does. Only a
+	// Group's items name one, and only a Task the source shows.
+	TaskId        string `protobuf:"bytes,10,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PlanItem) Reset() {
 	*x = PlanItem{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[57]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5147,7 +5265,7 @@ func (x *PlanItem) String() string {
 func (*PlanItem) ProtoMessage() {}
 
 func (x *PlanItem) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[57]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5160,7 +5278,7 @@ func (x *PlanItem) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanItem.ProtoReflect.Descriptor instead.
 func (*PlanItem) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{57}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *PlanItem) GetLabel() string {
@@ -5219,6 +5337,20 @@ func (x *PlanItem) GetAttention() bool {
 	return false
 }
 
+func (x *PlanItem) GetUncounted() bool {
+	if x != nil {
+		return x.Uncounted
+	}
+	return false
+}
+
+func (x *PlanItem) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
 type PullRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Url           string                 `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
@@ -5236,7 +5368,7 @@ type PullRequest struct {
 
 func (x *PullRequest) Reset() {
 	*x = PullRequest{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[58]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5248,7 +5380,7 @@ func (x *PullRequest) String() string {
 func (*PullRequest) ProtoMessage() {}
 
 func (x *PullRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[58]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5261,7 +5393,7 @@ func (x *PullRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PullRequest.ProtoReflect.Descriptor instead.
 func (*PullRequest) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{58}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *PullRequest) GetUrl() string {
@@ -5340,7 +5472,7 @@ type Preview struct {
 
 func (x *Preview) Reset() {
 	*x = Preview{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[59]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5352,7 +5484,7 @@ func (x *Preview) String() string {
 func (*Preview) ProtoMessage() {}
 
 func (x *Preview) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[59]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5365,7 +5497,7 @@ func (x *Preview) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Preview.ProtoReflect.Descriptor instead.
 func (*Preview) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{59}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *Preview) GetName() string {
@@ -5406,7 +5538,7 @@ type Link struct {
 
 func (x *Link) Reset() {
 	*x = Link{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[60]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5418,7 +5550,7 @@ func (x *Link) String() string {
 func (*Link) ProtoMessage() {}
 
 func (x *Link) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[60]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5431,7 +5563,7 @@ func (x *Link) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Link.ProtoReflect.Descriptor instead.
 func (*Link) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{60}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *Link) GetLabel() string {
@@ -5460,7 +5592,7 @@ type ReadSourceConversation struct {
 
 func (x *ReadSourceConversation) Reset() {
 	*x = ReadSourceConversation{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[61]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5472,7 +5604,7 @@ func (x *ReadSourceConversation) String() string {
 func (*ReadSourceConversation) ProtoMessage() {}
 
 func (x *ReadSourceConversation) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[61]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5485,7 +5617,7 @@ func (x *ReadSourceConversation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReadSourceConversation.ProtoReflect.Descriptor instead.
 func (*ReadSourceConversation) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{61}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *ReadSourceConversation) GetTaskId() string {
@@ -5513,7 +5645,7 @@ type SendToSource struct {
 
 func (x *SendToSource) Reset() {
 	*x = SendToSource{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[62]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5525,7 +5657,7 @@ func (x *SendToSource) String() string {
 func (*SendToSource) ProtoMessage() {}
 
 func (x *SendToSource) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[62]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5538,7 +5670,7 @@ func (x *SendToSource) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendToSource.ProtoReflect.Descriptor instead.
 func (*SendToSource) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{62}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *SendToSource) GetTaskId() string {
@@ -5565,7 +5697,7 @@ type SourceTaskSeen struct {
 
 func (x *SourceTaskSeen) Reset() {
 	*x = SourceTaskSeen{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[63]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5577,7 +5709,7 @@ func (x *SourceTaskSeen) String() string {
 func (*SourceTaskSeen) ProtoMessage() {}
 
 func (x *SourceTaskSeen) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[63]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5590,7 +5722,7 @@ func (x *SourceTaskSeen) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SourceTaskSeen.ProtoReflect.Descriptor instead.
 func (*SourceTaskSeen) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{63}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *SourceTaskSeen) GetTaskId() string {
@@ -5614,7 +5746,7 @@ type AnswerSourceGate struct {
 
 func (x *AnswerSourceGate) Reset() {
 	*x = AnswerSourceGate{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[64]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5626,7 +5758,7 @@ func (x *AnswerSourceGate) String() string {
 func (*AnswerSourceGate) ProtoMessage() {}
 
 func (x *AnswerSourceGate) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[64]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5639,7 +5771,7 @@ func (x *AnswerSourceGate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AnswerSourceGate.ProtoReflect.Descriptor instead.
 func (*AnswerSourceGate) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{64}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *AnswerSourceGate) GetTaskId() string {
@@ -5673,7 +5805,7 @@ type StopSourceTask struct {
 
 func (x *StopSourceTask) Reset() {
 	*x = StopSourceTask{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[65]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5685,7 +5817,7 @@ func (x *StopSourceTask) String() string {
 func (*StopSourceTask) ProtoMessage() {}
 
 func (x *StopSourceTask) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[65]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5698,7 +5830,7 @@ func (x *StopSourceTask) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StopSourceTask.ProtoReflect.Descriptor instead.
 func (*StopSourceTask) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{65}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *StopSourceTask) GetTaskId() string {
@@ -5719,7 +5851,7 @@ type ArchiveSourceTask struct {
 
 func (x *ArchiveSourceTask) Reset() {
 	*x = ArchiveSourceTask{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[66]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5731,7 +5863,7 @@ func (x *ArchiveSourceTask) String() string {
 func (*ArchiveSourceTask) ProtoMessage() {}
 
 func (x *ArchiveSourceTask) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[66]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5744,7 +5876,7 @@ func (x *ArchiveSourceTask) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ArchiveSourceTask.ProtoReflect.Descriptor instead.
 func (*ArchiveSourceTask) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{66}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ArchiveSourceTask) GetTaskId() string {
@@ -5766,7 +5898,7 @@ type LeaveSourceTask struct {
 
 func (x *LeaveSourceTask) Reset() {
 	*x = LeaveSourceTask{}
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[67]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5778,7 +5910,7 @@ func (x *LeaveSourceTask) String() string {
 func (*LeaveSourceTask) ProtoMessage() {}
 
 func (x *LeaveSourceTask) ProtoReflect() protoreflect.Message {
-	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[67]
+	mi := &file_serai_plugin_v1_plugin_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5791,7 +5923,7 @@ func (x *LeaveSourceTask) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LeaveSourceTask.ProtoReflect.Descriptor instead.
 func (*LeaveSourceTask) Descriptor() ([]byte, []int) {
-	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{67}
+	return file_serai_plugin_v1_plugin_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *LeaveSourceTask) GetTaskId() string {
@@ -6127,7 +6259,7 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\n" +
 	"archivable\x18\x19 \x01(\bR\n" +
 	"archivable\x12\x1a\n" +
-	"\bleavable\x18\x1a \x01(\bR\bleavable\"\xf0\x01\n" +
+	"\bleavable\x18\x1a \x01(\bR\bleavable\"\xc7\x03\n" +
 	"\vSourceGroup\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12 \n" +
@@ -6137,7 +6269,17 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\asummary\x18\x05 \x01(\v2\x1d.serai.plugin.v1.GroupSummaryR\asummary\x12/\n" +
 	"\x05items\x18\x06 \x03(\v2\x19.serai.plugin.v1.PlanItemR\x05items\x12\x1d\n" +
 	"\n" +
-	"items_word\x18\a \x01(\tR\titemsWord\"\x89\x02\n" +
+	"items_word\x18\a \x01(\tR\titemsWord\x128\n" +
+	"\bsections\x18\b \x03(\v2\x1c.serai.plugin.v1.GateSectionR\bsections\x12+\n" +
+	"\x05facts\x18\t \x03(\v2\x15.serai.plugin.v1.FactR\x05facts\x12A\n" +
+	"\rpull_requests\x18\n" +
+	" \x03(\v2\x1c.serai.plugin.v1.PullRequestR\fpullRequests\x12+\n" +
+	"\x05links\x18\v \x03(\v2\x15.serai.plugin.v1.LinkR\x05links\"]\n" +
+	"\x04Fact\x12\x14\n" +
+	"\x05label\x18\x01 \x01(\tR\x05label\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12\x10\n" +
+	"\x03url\x18\x03 \x01(\tR\x03url\x12\x17\n" +
+	"\atask_id\x18\x04 \x01(\tR\x06taskId\"\x89\x02\n" +
 	"\fGroupSummary\x12\x1a\n" +
 	"\bsubtitle\x18\x01 \x01(\tR\bsubtitle\x12\x12\n" +
 	"\x04done\x18\x02 \x01(\x05R\x04done\x12\x14\n" +
@@ -6174,7 +6316,7 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x04Plan\x12\x14\n" +
 	"\x05title\x18\x01 \x01(\tR\x05title\x12\x10\n" +
 	"\x03url\x18\x02 \x01(\tR\x03url\x12/\n" +
-	"\x05items\x18\x03 \x03(\v2\x19.serai.plugin.v1.PlanItemR\x05items\"\xbb\x01\n" +
+	"\x05items\x18\x03 \x03(\v2\x19.serai.plugin.v1.PlanItemR\x05items\"\xf2\x01\n" +
 	"\bPlanItem\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12\x12\n" +
@@ -6183,7 +6325,10 @@ const file_serai_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x04kind\x18\x05 \x01(\tR\x04kind\x12\x17\n" +
 	"\asince_s\x18\x06 \x01(\x03R\x06sinceS\x12\x12\n" +
 	"\x04note\x18\a \x01(\tR\x04note\x12\x1c\n" +
-	"\tattention\x18\b \x01(\bR\tattention\"\xdf\x01\n" +
+	"\tattention\x18\b \x01(\bR\tattention\x12\x1c\n" +
+	"\tuncounted\x18\t \x01(\bR\tuncounted\x12\x17\n" +
+	"\atask_id\x18\n" +
+	" \x01(\tR\x06taskId\"\xdf\x01\n" +
 	"\vPullRequest\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x12\n" +
 	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x16\n" +
@@ -6274,7 +6419,7 @@ func file_serai_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 }
 
 var file_serai_plugin_v1_plugin_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_serai_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 70)
+var file_serai_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 71)
 var file_serai_plugin_v1_plugin_proto_goTypes = []any{
 	(Code)(0),                      // 0: serai.plugin.v1.Code
 	(CommandEffect)(0),             // 1: serai.plugin.v1.CommandEffect
@@ -6333,25 +6478,26 @@ var file_serai_plugin_v1_plugin_proto_goTypes = []any{
 	(*Icon)(nil),                   // 54: serai.plugin.v1.Icon
 	(*SourceTask)(nil),             // 55: serai.plugin.v1.SourceTask
 	(*SourceGroup)(nil),            // 56: serai.plugin.v1.SourceGroup
-	(*GroupSummary)(nil),           // 57: serai.plugin.v1.GroupSummary
-	(*Gate)(nil),                   // 58: serai.plugin.v1.Gate
-	(*GateBody)(nil),               // 59: serai.plugin.v1.GateBody
-	(*GateSection)(nil),            // 60: serai.plugin.v1.GateSection
-	(*GateItem)(nil),               // 61: serai.plugin.v1.GateItem
-	(*Plan)(nil),                   // 62: serai.plugin.v1.Plan
-	(*PlanItem)(nil),               // 63: serai.plugin.v1.PlanItem
-	(*PullRequest)(nil),            // 64: serai.plugin.v1.PullRequest
-	(*Preview)(nil),                // 65: serai.plugin.v1.Preview
-	(*Link)(nil),                   // 66: serai.plugin.v1.Link
-	(*ReadSourceConversation)(nil), // 67: serai.plugin.v1.ReadSourceConversation
-	(*SendToSource)(nil),           // 68: serai.plugin.v1.SendToSource
-	(*SourceTaskSeen)(nil),         // 69: serai.plugin.v1.SourceTaskSeen
-	(*AnswerSourceGate)(nil),       // 70: serai.plugin.v1.AnswerSourceGate
-	(*StopSourceTask)(nil),         // 71: serai.plugin.v1.StopSourceTask
-	(*ArchiveSourceTask)(nil),      // 72: serai.plugin.v1.ArchiveSourceTask
-	(*LeaveSourceTask)(nil),        // 73: serai.plugin.v1.LeaveSourceTask
-	nil,                            // 74: serai.plugin.v1.Config.ValuesEntry
-	nil,                            // 75: serai.plugin.v1.InvokeCommand.FlagsEntry
+	(*Fact)(nil),                   // 57: serai.plugin.v1.Fact
+	(*GroupSummary)(nil),           // 58: serai.plugin.v1.GroupSummary
+	(*Gate)(nil),                   // 59: serai.plugin.v1.Gate
+	(*GateBody)(nil),               // 60: serai.plugin.v1.GateBody
+	(*GateSection)(nil),            // 61: serai.plugin.v1.GateSection
+	(*GateItem)(nil),               // 62: serai.plugin.v1.GateItem
+	(*Plan)(nil),                   // 63: serai.plugin.v1.Plan
+	(*PlanItem)(nil),               // 64: serai.plugin.v1.PlanItem
+	(*PullRequest)(nil),            // 65: serai.plugin.v1.PullRequest
+	(*Preview)(nil),                // 66: serai.plugin.v1.Preview
+	(*Link)(nil),                   // 67: serai.plugin.v1.Link
+	(*ReadSourceConversation)(nil), // 68: serai.plugin.v1.ReadSourceConversation
+	(*SendToSource)(nil),           // 69: serai.plugin.v1.SendToSource
+	(*SourceTaskSeen)(nil),         // 70: serai.plugin.v1.SourceTaskSeen
+	(*AnswerSourceGate)(nil),       // 71: serai.plugin.v1.AnswerSourceGate
+	(*StopSourceTask)(nil),         // 72: serai.plugin.v1.StopSourceTask
+	(*ArchiveSourceTask)(nil),      // 73: serai.plugin.v1.ArchiveSourceTask
+	(*LeaveSourceTask)(nil),        // 74: serai.plugin.v1.LeaveSourceTask
+	nil,                            // 75: serai.plugin.v1.Config.ValuesEntry
+	nil,                            // 76: serai.plugin.v1.InvokeCommand.FlagsEntry
 }
 var file_serai_plugin_v1_plugin_proto_depIdxs = []int32{
 	7,  // 0: serai.plugin.v1.Frame.hello:type_name -> serai.plugin.v1.Hello
@@ -6373,13 +6519,13 @@ var file_serai_plugin_v1_plugin_proto_depIdxs = []int32{
 	51, // 16: serai.plugin.v1.Request.send_to_task:type_name -> serai.plugin.v1.SendToTask
 	45, // 17: serai.plugin.v1.Request.list_pull_requests:type_name -> serai.plugin.v1.ListPullRequests
 	19, // 18: serai.plugin.v1.Request.invoke_command:type_name -> serai.plugin.v1.InvokeCommand
-	67, // 19: serai.plugin.v1.Request.read_source_conversation:type_name -> serai.plugin.v1.ReadSourceConversation
-	68, // 20: serai.plugin.v1.Request.send_to_source:type_name -> serai.plugin.v1.SendToSource
-	69, // 21: serai.plugin.v1.Request.source_task_seen:type_name -> serai.plugin.v1.SourceTaskSeen
-	70, // 22: serai.plugin.v1.Request.answer_source_gate:type_name -> serai.plugin.v1.AnswerSourceGate
-	71, // 23: serai.plugin.v1.Request.stop_source_task:type_name -> serai.plugin.v1.StopSourceTask
-	72, // 24: serai.plugin.v1.Request.archive_source_task:type_name -> serai.plugin.v1.ArchiveSourceTask
-	73, // 25: serai.plugin.v1.Request.leave_source_task:type_name -> serai.plugin.v1.LeaveSourceTask
+	68, // 19: serai.plugin.v1.Request.read_source_conversation:type_name -> serai.plugin.v1.ReadSourceConversation
+	69, // 20: serai.plugin.v1.Request.send_to_source:type_name -> serai.plugin.v1.SendToSource
+	70, // 21: serai.plugin.v1.Request.source_task_seen:type_name -> serai.plugin.v1.SourceTaskSeen
+	71, // 22: serai.plugin.v1.Request.answer_source_gate:type_name -> serai.plugin.v1.AnswerSourceGate
+	72, // 23: serai.plugin.v1.Request.stop_source_task:type_name -> serai.plugin.v1.StopSourceTask
+	73, // 24: serai.plugin.v1.Request.archive_source_task:type_name -> serai.plugin.v1.ArchiveSourceTask
+	74, // 25: serai.plugin.v1.Request.leave_source_task:type_name -> serai.plugin.v1.LeaveSourceTask
 	12, // 26: serai.plugin.v1.Response.status:type_name -> serai.plugin.v1.Status
 	11, // 27: serai.plugin.v1.Response.empty:type_name -> serai.plugin.v1.Empty
 	15, // 28: serai.plugin.v1.Response.config:type_name -> serai.plugin.v1.Config
@@ -6392,11 +6538,11 @@ var file_serai_plugin_v1_plugin_proto_depIdxs = []int32{
 	46, // 35: serai.plugin.v1.Response.pull_request_list:type_name -> serai.plugin.v1.PullRequestList
 	0,  // 36: serai.plugin.v1.Status.code:type_name -> serai.plugin.v1.Code
 	50, // 37: serai.plugin.v1.Event.journal_event:type_name -> serai.plugin.v1.JournalEvent
-	74, // 38: serai.plugin.v1.Config.values:type_name -> serai.plugin.v1.Config.ValuesEntry
+	75, // 38: serai.plugin.v1.Config.values:type_name -> serai.plugin.v1.Config.ValuesEntry
 	17, // 39: serai.plugin.v1.Command.flags:type_name -> serai.plugin.v1.Flag
 	1,  // 40: serai.plugin.v1.Command.effect:type_name -> serai.plugin.v1.CommandEffect
 	16, // 41: serai.plugin.v1.RegisterCommand.command:type_name -> serai.plugin.v1.Command
-	75, // 42: serai.plugin.v1.InvokeCommand.flags:type_name -> serai.plugin.v1.InvokeCommand.FlagsEntry
+	76, // 42: serai.plugin.v1.InvokeCommand.flags:type_name -> serai.plugin.v1.InvokeCommand.FlagsEntry
 	21, // 43: serai.plugin.v1.RegisterTemplate.template:type_name -> serai.plugin.v1.Template
 	25, // 44: serai.plugin.v1.Card.actions:type_name -> serai.plugin.v1.CardAction
 	24, // 45: serai.plugin.v1.Card.badges:type_name -> serai.plugin.v1.Badge
@@ -6426,24 +6572,28 @@ var file_serai_plugin_v1_plugin_proto_depIdxs = []int32{
 	54, // 69: serai.plugin.v1.Source.icon:type_name -> serai.plugin.v1.Icon
 	54, // 70: serai.plugin.v1.Source.icon_dark:type_name -> serai.plugin.v1.Icon
 	3,  // 71: serai.plugin.v1.SourceTask.status:type_name -> serai.plugin.v1.TaskStatus
-	66, // 72: serai.plugin.v1.SourceTask.links:type_name -> serai.plugin.v1.Link
-	58, // 73: serai.plugin.v1.SourceTask.gate:type_name -> serai.plugin.v1.Gate
-	62, // 74: serai.plugin.v1.SourceTask.plans:type_name -> serai.plugin.v1.Plan
-	64, // 75: serai.plugin.v1.SourceTask.pull_requests:type_name -> serai.plugin.v1.PullRequest
-	66, // 76: serai.plugin.v1.SourceTask.artifacts:type_name -> serai.plugin.v1.Link
-	65, // 77: serai.plugin.v1.SourceTask.previews:type_name -> serai.plugin.v1.Preview
-	57, // 78: serai.plugin.v1.SourceGroup.summary:type_name -> serai.plugin.v1.GroupSummary
-	63, // 79: serai.plugin.v1.SourceGroup.items:type_name -> serai.plugin.v1.PlanItem
-	66, // 80: serai.plugin.v1.GroupSummary.link:type_name -> serai.plugin.v1.Link
-	59, // 81: serai.plugin.v1.Gate.body:type_name -> serai.plugin.v1.GateBody
-	60, // 82: serai.plugin.v1.GateBody.sections:type_name -> serai.plugin.v1.GateSection
-	61, // 83: serai.plugin.v1.GateBody.items:type_name -> serai.plugin.v1.GateItem
-	63, // 84: serai.plugin.v1.Plan.items:type_name -> serai.plugin.v1.PlanItem
-	85, // [85:85] is the sub-list for method output_type
-	85, // [85:85] is the sub-list for method input_type
-	85, // [85:85] is the sub-list for extension type_name
-	85, // [85:85] is the sub-list for extension extendee
-	0,  // [0:85] is the sub-list for field type_name
+	67, // 72: serai.plugin.v1.SourceTask.links:type_name -> serai.plugin.v1.Link
+	59, // 73: serai.plugin.v1.SourceTask.gate:type_name -> serai.plugin.v1.Gate
+	63, // 74: serai.plugin.v1.SourceTask.plans:type_name -> serai.plugin.v1.Plan
+	65, // 75: serai.plugin.v1.SourceTask.pull_requests:type_name -> serai.plugin.v1.PullRequest
+	67, // 76: serai.plugin.v1.SourceTask.artifacts:type_name -> serai.plugin.v1.Link
+	66, // 77: serai.plugin.v1.SourceTask.previews:type_name -> serai.plugin.v1.Preview
+	58, // 78: serai.plugin.v1.SourceGroup.summary:type_name -> serai.plugin.v1.GroupSummary
+	64, // 79: serai.plugin.v1.SourceGroup.items:type_name -> serai.plugin.v1.PlanItem
+	61, // 80: serai.plugin.v1.SourceGroup.sections:type_name -> serai.plugin.v1.GateSection
+	57, // 81: serai.plugin.v1.SourceGroup.facts:type_name -> serai.plugin.v1.Fact
+	65, // 82: serai.plugin.v1.SourceGroup.pull_requests:type_name -> serai.plugin.v1.PullRequest
+	67, // 83: serai.plugin.v1.SourceGroup.links:type_name -> serai.plugin.v1.Link
+	67, // 84: serai.plugin.v1.GroupSummary.link:type_name -> serai.plugin.v1.Link
+	60, // 85: serai.plugin.v1.Gate.body:type_name -> serai.plugin.v1.GateBody
+	61, // 86: serai.plugin.v1.GateBody.sections:type_name -> serai.plugin.v1.GateSection
+	62, // 87: serai.plugin.v1.GateBody.items:type_name -> serai.plugin.v1.GateItem
+	64, // 88: serai.plugin.v1.Plan.items:type_name -> serai.plugin.v1.PlanItem
+	89, // [89:89] is the sub-list for method output_type
+	89, // [89:89] is the sub-list for method input_type
+	89, // [89:89] is the sub-list for extension type_name
+	89, // [89:89] is the sub-list for extension extendee
+	0,  // [0:89] is the sub-list for field type_name
 }
 
 func init() { file_serai_plugin_v1_plugin_proto_init() }
@@ -6506,7 +6656,7 @@ func file_serai_plugin_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_serai_plugin_v1_plugin_proto_rawDesc), len(file_serai_plugin_v1_plugin_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   70,
+			NumMessages:   71,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

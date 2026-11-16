@@ -628,20 +628,43 @@ message SourceTask {
 
 // SourceGroup is the source's own grouping of its Tasks (a plan's
 // sessions). serai shows each member once, under its Group; it never renames
-// one, leads it, archives it or broadcasts to it.
+// one, archives it or broadcasts to it.
 message SourceGroup {
   string id = 1;
   string title = 2; // one line, at most 80
-  string lead_task_id = 3; // a member, listed first and marked lead; "" for none
+  // lead_task_id is ignored since SDK 0.4.0: no Group has a lead (since
+  // 2026-11-13). It stays so a plugin built before still publishes.
+  string lead_task_id = 3;
   string url = 4; // "" for none
   GroupSummary summary = 5; // unset: serai's own roll-up of the members
   // items are the Group's own checklist (a Factory plan's work items),
   // drawn on the Group's page and in its members' Context, never on a
   // member's row: a Task's plan is its own (Task.plans). At most 50. With
   // items, serai counts the summary's done and total from them: done of
-  // those not cancelled (state "cancelled").
+  // those neither cancelled (state "cancelled") nor uncounted.
   repeated PlanItem items = 6;
   string items_word = 7; // what the source calls them, at most 24: "work items"
+
+  // The Group's detail, drawn on its page under its title (a Factory
+  // plan's overview), each optional:
+  //   - sections: its Markdown in parts, as a gate's body has them (Goal,
+  //     Approach, ...), at most 8, 48 KiB of Markdown in all;
+  //   - facts: a line each ("Verification · verified"), at most 8;
+  //   - pull_requests: what its members opened, at most 20;
+  //   - links: its threads, tickets and pages, at most 20.
+  repeated GateSection sections = 8;
+  repeated Fact facts = 9;
+  repeated PullRequest pull_requests = 10;
+  repeated Link links = 11;
+}
+
+// Fact is one line about a Group: a label and its value, which may open a
+// page (url) or one of the source's Tasks (task_id), not both.
+message Fact {
+  string label = 1; // one line, at most 40: "Verification"
+  string value = 2; // one line, at most 200: "verified"
+  string url = 3; // http or https; "" for none
+  string task_id = 4; // a Task the source shows; "" for none
 }
 
 // GroupSummary is the source's overview of a Group, drawn in serai's own
@@ -710,6 +733,13 @@ message PlanItem {
   int64 since_s = 6; // when it reached its state, unix seconds; 0 when not said
   string note = 7; // one line, at most 300: why it waits
   bool attention = 8; // it needs a person before it goes on: the note is a warning
+  // uncounted: listed, but not part of the progress (done of total), as a
+  // cancelled one isn't: a work item an agent only suggested.
+  bool uncounted = 9;
+  // task_id is the source's Task that works on the item (a work item's
+  // building session), which its row opens; "" while none does. Only a
+  // Group's items name one, and only a Task the source shows.
+  string task_id = 10;
 }
 
 message PullRequest {

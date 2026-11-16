@@ -189,7 +189,8 @@ func icon(i *Icon) *pluginv1.Icon {
 	return &pluginv1.Icon{MediaType: i.MediaType, Data: i.Data}
 }
 
-// Group is one Group a Source shows. Lead is a member's ID, or "" for none;
+// Group is one Group a Source shows. Lead is ignored since 0.4.0: no Group
+// has a lead (it stays so plugins built before still compile);
 // URL is where "Open in <Label>" goes, "" for none. Summary, when set, is
 // drawn in place of serai's status roll-up; serai always adds its own
 // at-the-gate count.
@@ -198,12 +199,29 @@ func icon(i *Icon) *pluginv1.Icon {
 // ItemsWord ("work items"): drawn on the Group's page and in its members'
 // Context, never on a member's row, whose plan bar is the Task's own Plans
 // (a session's task list). With Items, serai counts Summary's Done and
-// Total from them, leaving cancelled ones out. At most 50.
+// Total from them, leaving cancelled and Uncounted ones out. At most 50.
+// An item's TaskID names the member that works on it, which its row opens.
+//
+// Sections, Facts, PullRequests and Links are the Group's detail, drawn on
+// its page under the title (a Factory plan's overview): Markdown sections
+// as a gate's body has them (at most 8, 48 KiB in all), one-line facts
+// (at most 8), and at most 20 pull requests and 20 links.
 type Group struct {
 	ID, Title, Lead, URL string
 	Summary              *GroupSummary
 	Items                []PlanItem
 	ItemsWord            string
+	Sections             []GateSection
+	Facts                []Fact
+	PullRequests         []PullRequest
+	Links                []Link
+}
+
+// Fact is one line about a Group, "Verification · verified": Label at most
+// 40 characters, Value at most 200. It opens URL, or the source's Task
+// TaskID, when one is set.
+type Fact struct {
+	Label, Value, URL, TaskID string
 }
 
 // GroupSummary is the source's overview of a Group, in fields serai draws in
@@ -306,13 +324,17 @@ type Plan struct {
 // item needs a person before it can go on: "Its dependency hasn't merged").
 // An item whose State is "cancelled" stays listed, struck through, and
 // counts for neither done nor total, so a GroupSummary that counts the
-// same way agrees with its members' plan bars.
+// same way agrees with its members' plan bars. An Uncounted one stays
+// listed as it is and counts for neither too: a suggestion nobody took up.
+// TaskID, on a Group's item only, is the source's Task working on it.
 type PlanItem struct {
 	Label, State, URL string
 	Done              bool
 	Kind, Note        string
 	Since             time.Time
 	Attention         bool
+	Uncounted         bool
+	TaskID            string
 }
 
 // PullRequest is a pull request a Task opened or follows, as the source
@@ -571,17 +593,21 @@ func (p *Plugin) PublishTasks(ctx context.Context, s Source) error {
 		for _, pl := range t.Plans {
 			et.Plans = append(et.Plans, &pluginv1.Plan{Title: pl.Title, Url: pl.URL, Items: planItems(pl.Items)})
 		}
-		for _, pr := range t.PullRequests {
-			et.PullRequests = append(et.PullRequests, &pluginv1.PullRequest{Url: pr.URL, Repo: pr.Repo, Number: int32(pr.Number), Title: pr.Title,
-				State: pr.State, Additions: int32(pr.Additions), Deletions: int32(pr.Deletions), Grade: pr.Grade, Notes: pr.Notes})
-		}
+		et.PullRequests = pullRequests(t.PullRequests)
 		for _, pv := range t.Previews {
 			et.Previews = append(et.Previews, &pluginv1.Preview{Name: pv.Name, Url: pv.URL, Port: int32(pv.Port), Live: pv.Live})
 		}
 		src.Tasks = append(src.Tasks, et)
 	}
 	for _, g := range s.Groups {
-		eg := &pluginv1.SourceGroup{Id: g.ID, Title: g.Title, LeadTaskId: g.Lead, Url: g.URL, Items: planItems(g.Items), ItemsWord: g.ItemsWord}
+		eg := &pluginv1.SourceGroup{Id: g.ID, Title: g.Title, LeadTaskId: g.Lead, Url: g.URL, Items: planItems(g.Items), ItemsWord: g.ItemsWord,
+			Links: links(g.Links), PullRequests: pullRequests(g.PullRequests)}
+		for _, s := range g.Sections {
+			eg.Sections = append(eg.Sections, &pluginv1.GateSection{Heading: s.Heading, Markdown: s.Markdown, Folded: s.Folded})
+		}
+		for _, f := range g.Facts {
+			eg.Facts = append(eg.Facts, &pluginv1.Fact{Label: f.Label, Value: f.Value, Url: f.URL, TaskId: f.TaskID})
+		}
 		if sum := g.Summary; sum != nil {
 			eg.Summary = &pluginv1.GroupSummary{Subtitle: sum.Subtitle, Done: int32(sum.Done), Total: int32(sum.Total), DoneWord: sum.DoneWord, Bar: sum.Bar, State: sum.State, Link: link(sum.Link),
 				Attention: int32(sum.Attention), AttentionWord: sum.AttentionWord}
@@ -591,10 +617,19 @@ func (p *Plugin) PublishTasks(ctx context.Context, s Source) error {
 	return p.callCtx(ctx, &pluginv1.Request{Call: &pluginv1.Request_PublishTasks{PublishTasks: &pluginv1.PublishTasks{Source: src}}})
 }
 
+func pullRequests(prs []PullRequest) []*pluginv1.PullRequest {
+	var out []*pluginv1.PullRequest
+	for _, pr := range prs {
+		out = append(out, &pluginv1.PullRequest{Url: pr.URL, Repo: pr.Repo, Number: int32(pr.Number), Title: pr.Title,
+			State: pr.State, Additions: int32(pr.Additions), Deletions: int32(pr.Deletions), Grade: pr.Grade, Notes: pr.Notes})
+	}
+	return out
+}
+
 func planItems(its []PlanItem) []*pluginv1.PlanItem {
 	var out []*pluginv1.PlanItem
 	for _, it := range its {
-		ei := &pluginv1.PlanItem{Label: it.Label, State: it.State, Done: it.Done, Url: it.URL, Kind: it.Kind, Note: it.Note, Attention: it.Attention}
+		ei := &pluginv1.PlanItem{Label: it.Label, State: it.State, Done: it.Done, Url: it.URL, Kind: it.Kind, Note: it.Note, Attention: it.Attention, Uncounted: it.Uncounted, TaskId: it.TaskID}
 		if !it.Since.IsZero() {
 			ei.SinceS = it.Since.Unix()
 		}
