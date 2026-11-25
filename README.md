@@ -100,9 +100,11 @@ a backoff when it exits. Its stderr goes to `~/.serai/v2/plugins/greet.log`. `Ma
 - `PublishTasks` and `ServeSource`: Tasks from another system (a cloud agent's sessions, say)
   shown beside serai's own, in Groups if they belong together, with as much as the source serves:
   their conversation, the person's messages, an answer at their gate, a stop.
-- `ListHosts`, `ListTasks`, `ReadConversation`, `GitStatus` and `ListEvents` read the fleet:
+- `ListHosts`, `ListTasks`, `ReadConversation`, `GitStatus`, `ListPullRequests`,
+  `ListTaskPullRequests` (since 0.6.0) and `ListEvents` read the fleet:
   every Host and Workspace, a Host's Tasks (name, Project, folder, status, agent), a Task's
   conversation in the same entries whichever agent wrote it, the git checkout a Task works in,
+  the pull requests it works on as its Host last heard of them (one Task's, or up to 50 Tasks'),
   and the journal. `SendToTask` hands a Task's agent text. Each takes the API's own request
   message, with the Host (and Workspace) it is for; `Call` sends any other v1 request, and
   `CodeOf(err)` reads why one failed (`CODE_REFUSED` for a scope or a rule,
@@ -118,7 +120,7 @@ a backoff when it exits. Its stderr goes to `~/.serai/v2/plugins/greet.log`. `Ma
 
 | Scope | Allows |
 |---|---|
-| `read` | ListHosts, ListTasks, ReadConversation, GitStatus, ListEvents |
+| `read` | ListHosts, ListTasks, ReadConversation, GitStatus, ListPullRequests, ListTaskPullRequests, ListEvents |
 | `send` | SendToTask, to a live agent only: never a shell, a stranded Task or one waiting at a prompt. Audited. |
 | `cards` | PublishCard, DeleteCard |
 | `commands` | RegisterCommand, RegisterTemplate |
@@ -151,8 +153,9 @@ protobuf `serai.plugin.v1.Frame` (`proto/serai/plugin/v1/plugin.proto`), at most
 4. Answer the gateway's `InvokeCommand` with `Response{command_output: {text}}`, or a `Status`
    (`CODE_REFUSED` to say no), and its calls about your Task source.
 5. Receive `Event{journal_event}` for your `events:` scopes.
-6. Read and send with `ListHosts`, `ListTasks`, `ReadConversation`, `GitStatus`, `ListEvents` and
-   `SendToTask`, each naming the Host it is for.
+6. Read and send with `ListHosts`, `ListTasks`, `ReadConversation`, `GitStatus`,
+   `ListPullRequests`, `ListTaskPullRequests`, `ListEvents` and `SendToTask`, each naming the Host
+   it is for.
 
 The `.proto` file says what every message and field means.
 

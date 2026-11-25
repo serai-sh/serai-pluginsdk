@@ -18,7 +18,7 @@
 //	}
 //
 // The reads (ListHosts, ListTasks, ReadConversation, GitStatus,
-// ListPullRequests, ListEvents) and SendToTask take and give the API's own messages (gen/go/serai/plugin/v1),
+// ListPullRequests, ListTaskPullRequests, ListEvents) and SendToTask take and give the API's own messages (gen/go/serai/plugin/v1),
 // and Call sends any v1 request the SDK doesn't wrap. The gateway holds
 // every call to the plugin's scopes.
 //
@@ -226,6 +226,10 @@ func icon(i *Icon) *pluginv1.Icon {
 // its page under the title (a Factory plan's overview): Markdown sections
 // as a gate's body has them (at most 8, 48 KiB in all), one-line facts
 // (at most 8), and at most 20 pull requests and 20 links.
+//
+// Folded draws the Group closed in the sidebar until the person opens it,
+// as for work that is finished. One they opened or closed themselves stays
+// as they left it, and the header keeps its gate count either way.
 type Group struct {
 	ID, Title, Lead, URL string
 	Summary              *GroupSummary
@@ -235,6 +239,7 @@ type Group struct {
 	Facts                []Fact
 	PullRequests         []PullRequest
 	Links                []Link
+	Folded               bool
 }
 
 // Fact is one line about a Group, "Verification · verified": Label at most
@@ -679,7 +684,7 @@ func (p *Plugin) PublishTasks(ctx context.Context, s Source) error {
 	}
 	for _, g := range s.Groups {
 		eg := &pluginv1.SourceGroup{Id: g.ID, Title: g.Title, LeadTaskId: g.Lead, Url: g.URL, Items: planItems(g.Items), ItemsWord: g.ItemsWord,
-			Links: links(g.Links), PullRequests: pullRequests(g.PullRequests)}
+			Links: links(g.Links), PullRequests: pullRequests(g.PullRequests), Folded: g.Folded}
 		for _, s := range g.Sections {
 			eg.Sections = append(eg.Sections, &pluginv1.GateSection{Heading: s.Heading, Markdown: s.Markdown, Folded: s.Folded})
 		}
@@ -792,6 +797,16 @@ func (p *Plugin) GitStatus(ctx context.Context, req *pluginv1.GitStatus) (*plugi
 func (p *Plugin) ListPullRequests(ctx context.Context, req *pluginv1.ListPullRequests) (*pluginv1.PullRequestList, error) {
 	resp, err := p.Call(ctx, &pluginv1.Request{Call: &pluginv1.Request_ListPullRequests{ListPullRequests: req}})
 	return resp.GetPullRequestList(), err
+}
+
+// ListTaskPullRequests is ListPullRequests for up to 50 Tasks of one Host
+// (and Workspace) at once, from what serai already has: it never waits for
+// GitHub. A Task missing from the answer did not fit it; ask for it again.
+// It needs read. A serai older than the call answers CODE_UNIMPLEMENTED.
+// Since SDK 0.6.0.
+func (p *Plugin) ListTaskPullRequests(ctx context.Context, req *pluginv1.ListTaskPullRequests) ([]*pluginv1.TaskPullRequests, error) {
+	resp, err := p.Call(ctx, &pluginv1.Request{Call: &pluginv1.Request_ListTaskPullRequests{ListTaskPullRequests: req}})
+	return resp.GetTaskPullRequestLists().GetTasks(), err
 }
 
 // ListEvents reads the journal after a cursor. It needs read.

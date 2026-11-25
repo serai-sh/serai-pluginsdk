@@ -92,6 +92,7 @@ message Request {
     ListEvents list_events = 11;
     SendToTask send_to_task = 12;
     ListPullRequests list_pull_requests = 13;
+    ListTaskPullRequests list_task_pull_requests = 14;
 
     InvokeCommand invoke_command = 64;
     ReadSourceConversation read_source_conversation = 65;
@@ -117,6 +118,7 @@ message Response {
     EventList event_list = 8;
     CommandOutput command_output = 9;
     PullRequestList pull_request_list = 10;
+    TaskPullRequestLists task_pull_request_lists = 11;
   }
 }
 
@@ -475,8 +477,11 @@ message GitStatusResult {
 // conversation mentioned that are open, most recently mentioned first, in
 // any repo. A Card that covers one of them stands in for serai's own card
 // of it. Merged and closed pull requests are not in the list: serai shows
-// them as links. The states are gh's on the Task's Host, a minute old at
-// most. Answered with pull_request_list.
+// them as links. The states are what the Task's Host last heard from
+// GitHub: the call itself never asks GitHub, it keeps the Host asking in its
+// own time (an open pull request about every 5 minutes, at most two queries
+// a minute per host service, none when GitHub's limit is nearly used).
+// Answered with pull_request_list.
 message ListPullRequests {
   string host = 1;
   string workspace = 2;
@@ -485,10 +490,44 @@ message ListPullRequests {
 
 message PullRequestList {
   repeated TaskPullRequest pull_requests = 1;
-  // pending: gh on the Host has not answered for all of them yet, so the
-  // list may still grow, or lose one that turns out merged; ask again in a
-  // few seconds.
+  // pending: the Host has never heard about some of them, so the list may
+  // still grow, or lose one that turns out merged: keep what is shown for
+  // the Task and ask again in a few seconds, which costs no query. With note
+  // set, nothing will be asked before resumes_at_ms.
   bool pending = 2;
+  // note says in words why some of the list is the last state known rather
+  // than the current one, and when it is asked for again (GitHub's limit is
+  // nearly used, or gh could not ask), or, with nothing pending, why the
+  // Task's folder has none of its own (its remote is not github.com); ""
+  // otherwise. Since SDK 0.6.0.
+  string note = 3;
+  int64 resumes_at_ms = 4; // when note ends, unix ms; 0 without one
+}
+
+// ListTaskPullRequests is ListPullRequests for up to 50 Tasks of one Host
+// (and Workspace) at once, each from what the Host and the gateway already
+// have. Asking keeps the Host refreshing them as ListPullRequests does, so
+// a plugin that watches many Tasks needs only this call. Answered with
+// task_pull_request_lists. A serai older than the call answers
+// CODE_UNIMPLEMENTED. Since SDK 0.6.0.
+message ListTaskPullRequests {
+  string host = 1;
+  string workspace = 2;
+  repeated string task_ids = 3; // more than 50 is CODE_INVALID
+}
+
+message TaskPullRequestLists {
+  // In task_ids' order. A Task left out did not fit the answer: ask for it
+  // in another call.
+  repeated TaskPullRequests tasks = 1;
+}
+
+message TaskPullRequests {
+  string task_id = 1;
+  // list is as ListPullRequests answers it. Pending and empty for a Task
+  // whose conversation could not be read in the time the call has.
+  PullRequestList list = 2;
+  Status status = 3; // why there is no list (the Task is gone); unset is OK
 }
 
 message TaskPullRequest {
@@ -682,6 +721,13 @@ message SourceGroup {
   repeated Fact facts = 9;
   repeated PullRequest pull_requests = 10;
   repeated Link links = 11;
+
+  // folded is a hint (since SDK 0.7.0): the sidebar draws the Group closed
+  // until the person opens it, as for work that is finished. A Group the
+  // person opened or closed themselves stays as they left it, whatever is
+  // published later, and a fold hides no gate: the header keeps the count.
+  // A serai from before ignores it and draws the Group open.
+  bool folded = 12;
 }
 
 // Fact is one line about a Group: a label and its value, which may open a
